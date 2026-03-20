@@ -1,42 +1,21 @@
-variable "api_id" {
-  type        = string
-  description = "ID del API Gateway (proviene de compute_api)"
-}
+variable "project_name" { type = string }
+variable "environment"  { type = string }
 
-variable "api_execution_arn" {
-  type        = string
-  description = "Execution ARN para permisos (proviene de compute_api)"
-}
+# Datos del API Gateway (Vienen de compute_api)
+variable "api_id"            { type = string }
+variable "api_execution_arn" { type = string }
 
-# --- Query Lambda (Consulta de Emisiones) ---
-variable "query_lambda_arn" {
-  type = string
-}
+# Datos de Cognito (Vienen de auth)
+variable "cognito_user_pool_arn" { type = string }
+variable "cognito_client_id"     { type = string }
+variable "cognito_endpoint"      { type = string }
 
-variable "query_lambda_name" {
-  type = string
-}
+# Datos de las Lambdas (Vienen de compute)
+variable "query_lambda_arn"   { type = string }
+variable "query_lambda_name"  { type = string }
+variable "signer_lambda_arn"  { type = string }
+variable "signer_lambda_name" { type = string }
 
-variable "query_route_path" {
-  type    = string
-  default = "/emissions"
-}
-
-# --- Signer Lambda (Generación de URL S3) ---
-variable "signer_lambda_arn" {
-  type = string
-}
-
-variable "signer_lambda_name" {
-  type = string
-}
-
-variable "signer_route_path" {
-  type    = string
-  default = "/get-url"
-}
-
-variable "cognito_user_pool_arn" {
-  type        = string
-  description = "ARN del User Pool de Cognito para autenticación"
-}
+# Paths de las rutas
+variable "query_route_path"  { type = string }
+variable "signer_route_path" { type = string }

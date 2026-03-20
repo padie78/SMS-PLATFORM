@@ -146,3 +146,21 @@ variable "common_tags" {
     Owner     = "Diego"
   }
 }
+
+# variables.tf (RAÍZ)
+
+variable "emissions_api_url" {
+  description = "URL de la API externa para cálculo de emisiones"
+  type        = string
+}
+
+variable "emissions_api_key" {
+  description = "API Key para el servicio de emisiones (Mantenela secreta)"
+  type        = string
+  sensitive   = true # Evita que se vea la clave en los logs del Plan
+}
+
+variable "bedrock_model_id" {
+  description = "ID del modelo de Amazon Bedrock (ej: Claude 3 Haiku)"
+  type        = string
+}

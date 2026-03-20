@@ -24,6 +24,10 @@ external_api_url    = "https://api.sustainability.example.com"
 lambda_architecture = "arm64" # Mayor performance, menor costo
 auto_deploy         = true
 
+emissions_api_url = "https://api.carbon-tracking.com/v1"
+emissions_api_key = "sk_prod_12345..."
+bedrock_model_id  = "anthropic.claude-3-haiku-20240307-v1:0"
+
 # --- Detalle de Rutas y CORS ---
 query_route_path  = "/emissions"
 signer_route_path = "/get-url"

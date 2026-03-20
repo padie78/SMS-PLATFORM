@@ -58,6 +58,8 @@ module "compute" {
 
   # Infraestructura: Conexión con Storage y Database
   upload_bucket_arn = module.storage.bucket_arn
+  upload_bucket_name = module.storage.bucket_name # <-- Usá .name o .id, no .arn
+
   dynamo_table_name = module.database.table_name
   dynamo_table_arn  = module.database.table_arn
 
@@ -66,7 +68,12 @@ module "compute" {
   
   # Opcionales: Si no los pasas, usa los defaults (arm64, nodejs20, etc)
   lambda_architecture = var.lambda_architecture 
+
+  emissions_api_key = var.emissions_api_key
+  emissions_api_url = var.emissions_api_url
+  bedrock_model_id  = var.bedrock_model_id
 }
+
 
 # 2. Módulo de Infraestructura API: Crea el "Edificio" (Gateway + Stage)
 # --- Módulo de Infraestructura de API ---
@@ -93,21 +100,26 @@ module "compute_api" {
 # 3. Módulo de Rutas: Conecta las Lambdas con el Gateway
 module "api" {
   source            = "./modules/api"
+  project_name      = var.project_name
+  environment       = var.environment
 
-  cognito_user_pool_arn = module.auth.user_pool_arn # ARN del User Pool de Cognito para autenticación
+  # Conexión con Cognito
+  cognito_user_pool_arn = module.auth.user_pool_arn
+  cognito_client_id     = module.auth.client_id
+  cognito_endpoint      = module.auth.user_pool_endpoint
   
-  # Conexión con el módulo compute_api (Infraestructura)
+  # Infraestructura API
   api_id            = module.compute_api.api_id
   api_execution_arn = module.compute_api.api_execution_arn
   
-  # Conexión con el módulo compute (Lógica de negocio)
+  # Lambdas
   query_lambda_arn   = module.compute.query_lambda_arn
   query_lambda_name  = module.compute.query_lambda_name
-  
   signer_lambda_arn  = module.compute.signer_lambda_arn
   signer_lambda_name = module.compute.signer_lambda_name
+  lambda_role_arn  = module.iam.lambda_role_arn
 
-  # Paths de las rutas (pueden venir de variables globales)
+  # Paths
   query_route_path  = var.query_route_path
-  signer_route_path = var.signer_route_path
+  signer_route_path = var.signer_route_path 
 }
