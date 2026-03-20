@@ -106,17 +106,6 @@ variable "signer_route_path" {
   default     = "/get-url"
 }
 
-# --- Identificación ---
-variable "project_name" {
-  type        = string
-  description = "Nombre del proyecto (ej: sms-platform)"
-}
-
-variable "environment" {
-  type        = string
-  description = "Entorno de ejecución (dev, stg, prod)"
-}
-
 # --- Configuración de la Tabla ---
 variable "table_name" {
   type        = string
