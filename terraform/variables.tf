@@ -159,8 +159,3 @@ variable "bedrock_model_id" {
   description = "ID del modelo de Amazon Bedrock (ej: Claude 3 Haiku)"
   type        = string
 }
-
-variable "lambda_role_arn" {
-  description = "ARN del rol de IAM que las Lambdas usarán para permisos"
-  type        = string
-}
