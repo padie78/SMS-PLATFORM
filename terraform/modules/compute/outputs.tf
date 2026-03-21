@@ -1,4 +1,11 @@
-# modules/compute/outputs.tf
+output "query_lambda_arn" {
+  value = aws_lambda_function.query.arn
+}
+
+output "query_lambda_name" {
+  value = aws_lambda_function.query.function_name
+}
+
 output "signer_lambda_arn" {
   value = aws_lambda_function.signer.arn
 }
@@ -6,5 +13,3 @@ output "signer_lambda_arn" {
 output "signer_lambda_name" {
   value = aws_lambda_function.signer.function_name
 }
-
-# (Y lo mismo para la query_lambda que ya tenías)
