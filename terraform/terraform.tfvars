@@ -1,5 +1,5 @@
 # --- Configuración de AWS ---
-aws_region = "us-east-1"
+aws_region = "eu-central-1"
 
 # --- Identificación del Proyecto ---
 project_name = "sms-platform"

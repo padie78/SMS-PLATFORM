@@ -1,0 +1,37 @@
+name: "Terraform Destroy"
+
+on:
+  workflow_dispatch: # Esto permite ejecutarlo manualmente desde la UI de GitHub
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-destroy:
+    name: "Terraform Destroy"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./terraform # Ajustá esto si tu carpeta raíz es otra
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0 # Usá la misma versión que en el deploy
+
+      - name: Terraform Init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: terraform init
+
+      - name: Terraform Destroy
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        # El flag -auto-approve es clave para que no se quede esperando confirmación
+        run: terraform destroy -auto-approve -input=false

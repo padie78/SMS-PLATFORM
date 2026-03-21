@@ -2,7 +2,7 @@ const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
 // Instanciamos fuera del handler para reutilizar la conexión en "warm starts"
-const s3Client = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
+const s3Client = new S3Client({ region: process.env.AWS_REGION || "eu-central-1" });
 
 exports.handler = async (event) => {
     // 1. Validación defensiva del body

@@ -2,7 +2,7 @@
 variable "aws_region" {
   type        = string
   description = "Región de AWS donde se desplegará la infraestructura"
-  default     = "us-east-1"
+  default     = "eu-central-1"
 }
 
 # --- Identificación del Proyecto ---
