@@ -1,10 +1,11 @@
 name: Terraform CI/CD
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
+  workflow_dispatch: # <--- ESTO permite el botón "Run workflow" en GitHub Actions
+  # Comentamos los automáticos para que no te sorprendan
+  # push:
+  #   branches:
+  #     - main
 
 jobs:
   terraform:
@@ -13,10 +14,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # Actualizado a v4 (más rápido)
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v2
+        uses: hashicorp/setup-terraform@v3 # Actualizado a v3
         with:
           terraform_version: 1.6.0
 
@@ -25,16 +26,20 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-central-1  # o tu región
+          aws-region: us-east-1 # Ajustala a tu región real si no es Virginia
 
       - name: Terraform Init
-        run: terraform init
-        working-directory: ./terraform  # <--- Asegurate que sea la misma carpeta
+        run: terraform init -input=false
+        working-directory: ./terraform
 
       - name: Terraform Plan
-        run: terraform plan -out=tfplan -var-file="terraform.tfvars"
+        # Quitamos el -var-file si tu archivo se llama terraform.tfvars (lo toma solo)
+        # Agregamos -input=false para que no se cuelgue 6 minutos si falta algo
+        run: terraform plan -out=tfplan -input=false
         working-directory: ./terraform
 
       - name: Terraform Apply
+        # Se ejecuta solo si le das al botón manual y estás en main
         if: github.ref == 'refs/heads/main'
         run: terraform apply -auto-approve tfplan
+        working-directory: ./terraform
