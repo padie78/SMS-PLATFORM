@@ -108,8 +108,6 @@ module "api" {
   api_execution_arn = module.compute_api.api_execution_arn
   
   # Conexión con Lambdas (Signer para S3 y Processor para IA)
-  query_lambda_arn   = module.compute.processor_lambda_arn
-  query_lambda_name  = module.compute.processor_lambda_name
   signer_lambda_arn  = module.compute.signer_lambda_arn
   signer_lambda_name = module.compute.signer_lambda_name
 

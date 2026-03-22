@@ -14,14 +14,6 @@ resource "aws_apigatewayv2_authorizer" "cognito_auth" {
 }
 
 # --- INTEGRACIONES (El puente a las Lambdas) ---
-
-resource "aws_apigatewayv2_integration" "query_integration" {
-  api_id                 = var.api_id
-  integration_type       = "AWS_PROXY"
-  integration_uri        = var.query_lambda_arn
-  payload_format_version = "2.0"
-}
-
 resource "aws_apigatewayv2_integration" "signer_integration" {
   api_id                 = var.api_id
   integration_type       = "AWS_PROXY"
@@ -32,13 +24,6 @@ resource "aws_apigatewayv2_integration" "signer_integration" {
 # --- RUTAS PROTEGIDAS ---
 
 # Ruta GET /emissions (Query)
-resource "aws_apigatewayv2_route" "query_route" {
-  api_id             = var.api_id
-  route_key          = "GET ${var.query_route_path}"
-  target             = "integrations/${aws_apigatewayv2_integration.query_integration.id}"
-  authorization_type = "JWT"
-  authorizer_id      = aws_apigatewayv2_authorizer.cognito_auth.id
-}
 
 # Ruta POST /get-url (Signer)
 resource "aws_apigatewayv2_route" "signer_route" {
@@ -50,15 +35,6 @@ resource "aws_apigatewayv2_route" "signer_route" {
 }
 
 # --- PERMISOS (Para que API Gateway pueda "llamar" a la Lambda) ---
-
-resource "aws_lambda_permission" "query_permission" {
-  statement_id  = "AllowExecutionFromAPIGatewayQuery"
-  action        = "lambda:InvokeFunction"
-  function_name = var.query_lambda_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${var.api_execution_arn}/*/*"
-}
-
 resource "aws_lambda_permission" "signer_permission" {
   statement_id  = "AllowExecutionFromAPIGatewaySigner"
   action        = "lambda:InvokeFunction"

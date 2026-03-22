@@ -1,32 +1,35 @@
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
-// Reutilización del cliente para optimizar Warm Starts
+// Configuración del cliente S3 (Reutilizado entre invocaciones)
 const s3Client = new S3Client({ region: process.env.AWS_REGION || "eu-central-1" });
 
 exports.handler = async (event) => {
-    // 1. Validación defensiva del Authorizer (Compatible con REST y HTTP API)
-    const claims = event.requestContext?.authorizer?.claims || 
-                   event.requestContext?.authorizer?.jwt?.claims;
-
-    if (!claims) {
-        console.error("No se encontró el contexto de auth. Evento recibido:", JSON.stringify(event));
-        return { 
-            statusCode: 401, 
-            body: JSON.stringify({ message: "Unauthorized: No identity context found" }) 
-        };
-    }
-
-    // 2. Validación defensiva del Body
-    if (!event.body) {
-        return {
-            statusCode: 400,
-            body: JSON.stringify({ message: "Missing request body" })
-        };
-    }
+    console.log("Evento recibido:", JSON.stringify(event));
 
     try {
-        const userId = claims.sub || claims['cognito:username'];
+        // 1. Extraer Identidad (Compatible con HTTP API y JWT Authorizer)
+        const claims = event.requestContext?.authorizer?.jwt?.claims || 
+                       event.requestContext?.authorizer?.claims;
+
+        if (!claims) {
+            return {
+                statusCode: 401,
+                body: JSON.stringify({ message: "Unauthorized: No identity context found" })
+            };
+        }
+
+        // El 'sub' es el ID único del usuario en Cognito
+        const userId = claims.sub;
+
+        // 2. Parsear el Body
+        if (!event.body) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ message: "Missing request body" })
+            };
+        }
+
         const { fileName, fileType } = JSON.parse(event.body);
 
         if (!fileName) {
@@ -36,17 +39,22 @@ exports.handler = async (event) => {
             };
         }
 
-        // 3. Sanitización y Generación de Key Dinámica por Usuario
+        // 3. Generación de Key Estratégica
+        // IMPORTANTE: Empezamos con 'uploads/' para que coincida con el trigger de Terraform
         const cleanFileName = fileName.replace(/\s+/g, '_').toLowerCase();
-        const key = `${userId}/uploads/${Date.now()}-${cleanFileName}`;
+        const timestamp = Date.now();
+        const key = `uploads/${userId}/${timestamp}-${cleanFileName}`;
 
+        console.log(`Generando URL para: ${key}`);
+
+        // 4. Preparar el comando de S3
         const command = new PutObjectCommand({
             Bucket: process.env.UPLOAD_BUCKET,
             Key: key,
             ContentType: fileType || 'application/pdf'
         });
 
-        // 4. Generación de Presigned URL (Vence en 5 min)
+        // 5. Generar la Presigned URL (Válida por 5 minutos)
         const uploadURL = await getSignedUrl(s3Client, command, { expiresIn: 300 });
 
         return {
@@ -60,12 +68,13 @@ exports.handler = async (event) => {
             body: JSON.stringify({
                 uploadURL,
                 key,
-                userId
+                userId,
+                message: "URL generada exitosamente. Use el método PUT para subir el archivo."
             })
         };
+
     } catch (error) {
-        console.error("Error en Signer Lambda:", error);
-        
+        console.error("Error crítico en Signer:", error);
         return {
             statusCode: 500,
             headers: { "Access-Control-Allow-Origin": "*" },

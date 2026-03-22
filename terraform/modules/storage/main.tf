@@ -68,12 +68,11 @@ resource "aws_s3_bucket_notification" "processor_trigger" {
 
   lambda_function {
     lambda_function_arn = var.processor_lambda_arn
-    events              = ["s3:ObjectCreated:Put", "s3:ObjectCreated:Post"] # Agregamos Post por si usas S3 Browser uploads
+    events              = ["s3:ObjectCreated:Put", "s3:ObjectCreated:Post"] 
     
-    # Esto atrapará cualquier archivo dentro de la carpeta uploads/
-    # sin importar el ClientId que venga después.
-    filter_prefix       = "uploads/" 
-    filter_suffix       = ".pdf"
+    # Si el ID del cliente va al principio, dejamos el prefijo vacío 
+    # o lo cambiamos para que busque en cualquier carpeta pero solo PDFs
+    filter_suffix       = ".pdf" 
   }
   depends_on = [aws_lambda_permission.s3_invoke_processor]
 }

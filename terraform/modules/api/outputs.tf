@@ -6,10 +6,6 @@ output "authorizer_id" {
 }
 
 # Si querés exportar los IDs de las rutas
-output "query_route_id" {
-  value = aws_apigatewayv2_route.query_route.id
-}
-
 output "signer_route_id" {
   value = aws_apigatewayv2_route.signer_route.id
 }

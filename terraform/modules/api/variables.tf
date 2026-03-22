@@ -11,8 +11,6 @@ variable "cognito_client_id"     { type = string }
 variable "cognito_endpoint"      { type = string }
 
 # Datos de las Lambdas (Vienen de compute)
-variable "query_lambda_arn"   { type = string }
-variable "query_lambda_name"  { type = string }
 variable "signer_lambda_arn"  { type = string }
 variable "signer_lambda_name" { type = string }
 
