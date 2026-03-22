@@ -39,8 +39,15 @@ resource "aws_lambda_function" "processor" {
   handler       = "src/index.handler"
   runtime       = "nodejs20.x"
   role          = var.lambda_role_arn
-  timeout       = 60 # Tiempo extra para llamadas a IA
+  timeout       = 60 
+  memory_size   = 512 # Agregado para performance de CPU
   architectures = [var.lambda_architecture]
+
+  # Recomendado: Capa de logs para debugging
+  logging_config {
+    log_format = "JSON"
+    log_group  = "/aws/lambda/${var.project_name}-processor-${var.environment}"
+  }
 
   environment {
     variables = {
@@ -48,8 +55,15 @@ resource "aws_lambda_function" "processor" {
       BEDROCK_MODEL_ID  = var.bedrock_model_id
       EMISSIONS_API_URL = var.emissions_api_url
       EMISSIONS_API_KEY = var.emissions_api_key
+      AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1" # Optimiza llamadas HTTP
     }
   }
 
   source_code_hash = data.archive_file.processor_zip.output_base64sha256
+}
+
+# No olvides el Log Group para que no se borren tus logs de debug
+resource "aws_cloudwatch_log_group" "processor_logs" {
+  name              = "/aws/lambda/${var.project_name}-processor-${var.environment}"
+  retention_in_days = 14
 }

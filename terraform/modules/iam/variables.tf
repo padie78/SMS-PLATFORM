@@ -16,6 +16,11 @@ variable "lambda_role_name" {
   description = "Nombre base para el rol de ejecución de Lambda"
 }
 
+variable "lambda_role_arn" {
+  type        = string
+  description = "El ARN del rol de IAM que usará la función Lambda"
+}
+
 variable "tags" {
   type    = map(string)
   default = {}
