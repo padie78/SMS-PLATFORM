@@ -67,9 +67,10 @@ resource "aws_iam_policy" "processor_ai_permissions" {
   })
 }
 
-# Adjuntar la política al Rol usando referencia directa al RECURSO
+# Adjuntar la política al Rol usando el nombre correcto
 resource "aws_iam_role_policy_attachment" "attach_ai_policy" {
-  # Cambiamos var.lambda_role_arn por el nombre del recurso local
-  role       = aws_iam_role.iam_for_lambda.name 
+  # ANTES decía: aws_iam_role.iam_for_lambda.name
+  # AHORA debe decir:
+  role       = aws_iam_role.lambda_exec.name 
   policy_arn = aws_iam_policy.processor_ai_permissions.arn
 }

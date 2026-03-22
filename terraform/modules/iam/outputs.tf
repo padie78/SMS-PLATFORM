@@ -1,4 +1,4 @@
 output "lambda_role_arn" {
-  value       = aws_iam_role.iam_for_lambda.arn
-  description = "Este es el ARN que usará la Lambda"
+  # Debe ser lambda_exec porque así lo llamaste en el main.tf
+  value = aws_iam_role.lambda_exec.arn
 }
