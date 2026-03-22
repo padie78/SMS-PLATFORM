@@ -14,10 +14,11 @@ resource "aws_iam_role" "lambda_exec" {
   })
 }
 
+# Política para permitir la subida a S3 (PutObject)
 resource "aws_iam_role_policy" "s3_policy" {
   name = "sms-platform-s3-upload-policy"
-  role = aws_iam_role.lambda_role.id # El nombre de tu recurso de rol
-
+  role = aws_iam_role.lambda_exec.id  # <--- CORREGIDO: ahora coincide con "lambda_exec"
+  
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
