@@ -1,64 +1,58 @@
-const { extraerTexto } = require('./textract');
-const { entenderConIA } = require('./bedrock');
-const { calcularEnApiExterna } = require('./external_api');
-const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
-
-const ddbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
-const dynamo = DynamoDBDocumentClient.from(ddbClient);
-
 exports.handler = async (event) => {
     const results = [];
 
     for (const record of event.Records) {
         const bucket = record.s3.bucket.name;
         const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, ' '));
-        const clientId = key.split('/')[0] || 'unknown';
+        
+        // CORRECCIÓN: Si el path es "uploads/ID_CLIENTE/archivo.pdf"
+        // parts[0] = uploads, parts[1] = ID_CLIENTE
+        const parts = key.split('/');
+        const clientId = parts[1] || 'unknown'; 
 
-        console.log(`Iniciando procesamiento: ${key}`);
+        console.log(`Iniciando procesamiento: ${key} para Cliente: ${clientId}`);
 
         try {
-            // PIPELINE DE PROCESAMIENTO
             const texto = await extraerTexto(bucket, key);
             const datosFactura = await entenderConIA(texto);
             const resultadoCO2 = await calcularEnApiExterna(datosFactura);
 
-            // PERSISTENCIA EXITOSA
-            const item = {
-                PK: `CLIENT#${clientId}`,
-                SK: `EMISSION#${Date.now()}`,
-                data: datosFactura,
-                co2e: resultadoCO2,
-                fileRef: key,
-                status: "VERIFIED",
-                processedAt: new Date().toISOString()
-            };
-
+            // ESTRATEGIA DE PERSISTENCIA:
+            // Usamos una SK fija para el "LATEST" y una con timestamp para el historial
+            const processedAt = new Date().toISOString();
+            
+            // 1. Guardar el registro histórico
             await dynamo.send(new PutCommand({
                 TableName: process.env.DYNAMO_TABLE,
-                Item: item
+                Item: {
+                    PK: `CLIENT#${clientId}`,
+                    SK: `EMISSION#${Date.now()}`,
+                    data: datosFactura,
+                    co2e: resultadoCO2,
+                    fileRef: key,
+                    status: "VERIFIED",
+                    processedAt: processedAt
+                }
+            }));
+
+            // 2. ACTUALIZACIÓN "LATEST": Esto permite que el dashboard 
+            // siempre muestre el último proceso sin buscar en todo el historial.
+            await dynamo.send(new PutCommand({
+                TableName: process.env.DYNAMO_TABLE,
+                Item: {
+                    PK: `CLIENT#${clientId}`,
+                    SK: `LATEST_EMISSION`, 
+                    co2e: resultadoCO2,
+                    processedAt: processedAt,
+                    fileRef: key
+                }
             }));
 
             results.push({ key, status: 'success' });
 
         } catch (err) {
-            console.error(`Fallo crítico en archivo ${key}:`, err.message);
-
-            // PERSISTENCIA DE ERROR (Para auditoría)
-            await dynamo.send(new PutCommand({
-                TableName: process.env.DYNAMO_TABLE,
-                Item: {
-                    PK: `CLIENT#${clientId}`,
-                    SK: `ERROR#${Date.now()}`,
-                    fileRef: key,
-                    errorMessage: err.message,
-                    status: "FAILED"
-                }
-            }));
-
-            results.push({ key, status: 'error', reason: err.message });
+            // ... tu lógica de error actual está bien ...
         }
     }
-
     return results;
 };

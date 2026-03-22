@@ -53,3 +53,27 @@ resource "aws_s3_bucket_website_configuration" "frontend_config" {
     key = "error.html"
   }
 }
+
+# Permiso para que S3 invoque la Lambda
+resource "aws_lambda_permission" "s3_invoke_processor" {
+  statement_id  = "AllowS3InvokeProcessor"
+  action        = "lambda:InvokeFunction"
+  function_name = var.processor_lambda_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = module.s3_bucket.s3_bucket_arn
+}
+
+resource "aws_s3_bucket_notification" "processor_trigger" {
+  bucket = module.s3_bucket.s3_bucket_id
+
+  lambda_function {
+    lambda_function_arn = var.processor_lambda_arn
+    events              = ["s3:ObjectCreated:Put", "s3:ObjectCreated:Post"] # Agregamos Post por si usas S3 Browser uploads
+    
+    # Esto atrapará cualquier archivo dentro de la carpeta uploads/
+    # sin importar el ClientId que venga después.
+    filter_prefix       = "uploads/" 
+    filter_suffix       = ".pdf"
+  }
+  depends_on = [aws_lambda_permission.s3_invoke_processor]
+}

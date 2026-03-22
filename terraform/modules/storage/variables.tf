@@ -43,3 +43,11 @@ variable "cors_allowed_headers" {
   default = ["*"] 
   description = "Encabezados permitidos para CORS."
 }
+
+variable "processor_lambda_arn" {
+  type = string
+}
+
+variable "processor_lambda_name" {
+  type = string
+}
