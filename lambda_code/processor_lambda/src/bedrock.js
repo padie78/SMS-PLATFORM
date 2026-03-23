@@ -9,7 +9,7 @@ const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || "eu-
  */
 exports.entenderConIA = async (summary, items) => {
     // 1. IMPORTANTE: Usamos la versión 3.5 para evitar el error de "Legacy Model"
-    const modelId = "anthropic.claude-haiku-4-5-20251001-v1:0";
+    const modelId = "eu.anthropic.claude-4-5-haiku-20251030-v1:0";
     
 
     const systemPrompt = `You are a specialized Sustainability Data Engineer. 
