@@ -14,43 +14,29 @@ resource "aws_iam_role" "lambda_exec" {
   })
 }
 
-# Política para permitir la subida a S3 (PutObject)
-resource "aws_iam_role_policy" "s3_policy" {
-  name = "sms-platform-s3-upload-policy"
-  role = aws_iam_role.lambda_exec.id
-  
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action   = ["s3:PutObject"]
-        Effect   = "Allow"
-        Resource = "arn:aws:s3:::sms-platform-dev-uploads/*"
-      }
-    ]
-  })
-}
-
-# Política básica para que las Lambdas escriban logs en CloudWatch
+# 2. Política básica para CloudWatch Logs
 resource "aws_iam_role_policy_attachment" "lambda_logs" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Política de IA (Textract + Bedrock + GetObject)
+# 3. Política Integral (S3 + Textract Asíncrono + Bedrock)
+# He consolidado s3_policy, textract_extra_policy y processor_ai_permissions aquí
 resource "aws_iam_policy" "processor_ai_permissions" {
   name        = "${var.project_name}-processor-ai-policy-${var.environment}"
-  description = "Permisos para que la Lambda use OCR e Inteligencia Artificial"
+  description = "Permisos consolidados para OCR (Textract Asíncrono), IA (Bedrock) y S3"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        # Permisos para Textract (DetectDocument y AnalyzeExpense)
+        # Permisos para Textract: Se agregan las acciones asíncronas para PDFs
         Effect   = "Allow"
         Action   = [
           "textract:DetectDocumentText",
-          "textract:AnalyzeExpense"
+          "textract:AnalyzeExpense",
+          "textract:StartExpenseAnalysis", # <--- REQUERIDO para el nuevo código
+          "textract:GetExpenseAnalysis"    # <--- REQUERIDO para el nuevo código
         ]
         Resource = "*" 
       },
@@ -61,34 +47,20 @@ resource "aws_iam_policy" "processor_ai_permissions" {
         Resource = "arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
       },
       {
-        # Permiso para leer los archivos que disparan el evento
+        # Permisos de S3: Combinamos PutObject y GetObject en un solo bloque
         Effect   = "Allow"
-        Action   = ["s3:GetObject"]
+        Action   = [
+          "s3:GetObject",
+          "s3:PutObject"
+        ]
         Resource = "arn:aws:s3:::${var.project_name}-${var.environment}-uploads/*"
       }
     ]
   })
 }
 
-# Adjuntar la política al Rol
+# 4. Adjuntar la política integral al Rol
 resource "aws_iam_role_policy_attachment" "attach_ai_policy" {
   role       = aws_iam_role.lambda_exec.name 
   policy_arn = aws_iam_policy.processor_ai_permissions.arn
-}
-
-# Política adicional para asegurar AnalyzeExpense (Versión Inline)
-resource "aws_iam_role_policy" "textract_extra_policy" {
-  name = "textract-analyze-expense-policy"
-  role = aws_iam_role.lambda_exec.name 
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["textract:AnalyzeExpense"]
-        Resource = "*"
-      }
-    ]
-  })
 }
