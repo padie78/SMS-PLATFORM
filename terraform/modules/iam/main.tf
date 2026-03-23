@@ -14,22 +14,37 @@ resource "aws_iam_role" "lambda_exec" {
   })
 }
 
-# 2. Política básica para CloudWatch Logs
+# 2. Política básica para CloudWatch Logs (Indispensable para debug)
 resource "aws_iam_role_policy_attachment" "lambda_logs" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# 3. Política Integral (S3 + Textract Asíncrono + Bedrock)
+# 3. Política Integral (S3 + Textract + Bedrock + DynamoDB)
 resource "aws_iam_policy" "processor_ai_permissions" {
   name        = "${var.project_name}-processor-ai-policy-${var.environment}"
-  description = "Permisos consolidados para OCR (Textract), IA (Bedrock Claude 4.5/3.5) y S3"
+  description = "Permisos para OCR, IA, S3 y persistencia en DynamoDB"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        # Permisos para Textract: Soporte completo para procesamiento de facturas y PDFs
+        # --- PERMISOS DYNAMODB (Lo que faltaba) ---
+        Effect   = "Allow"
+        Action   = [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:Query",
+          "dynamodb:DescribeTable"
+        ]
+        Resource = [
+          "arn:aws:dynamodb:eu-central-1:473959757331:table/${var.project_name}-${var.environment}-emissions",
+          "arn:aws:dynamodb:eu-central-1:473959757331:table/${var.project_name}-${var.environment}-emissions/index/*"
+        ]
+      },
+      {
+        # --- PERMISOS TEXTRACT ---
         Effect   = "Allow"
         Action   = [
           "textract:DetectDocumentText",
@@ -40,26 +55,26 @@ resource "aws_iam_policy" "processor_ai_permissions" {
         Resource = "*" 
       },
       {
-        # Permiso FLEXIBLE para Bedrock:
-        # Permite modelos base de la serie 3, 3.5 y 4.x, así como perfiles de inferencia regionales.
+        # --- PERMISOS BEDROCK ---
         Effect   = "Allow"
         Action   = ["bedrock:InvokeModel"]
         Resource = [
-        # Permiso para el Perfil de Inferencia (el que usas en el código)
           "arn:aws:bedrock:eu-central-1:*:inference-profile/eu.anthropic.claude-*",
-          
-          # Permiso para los modelos base en Europa (necesario para el balanceo automático)
           "arn:aws:bedrock:eu-*:*:foundation-model/anthropic.claude-*"
         ]
       },
       {
-        # Permisos de S3: Acceso al bucket de carga del proyecto
+        # --- PERMISOS S3 ---
         Effect   = "Allow"
         Action   = [
           "s3:GetObject",
-          "s3:PutObject"
+          "s3:PutObject",
+          "s3:ListBucket"
         ]
-        Resource = "arn:aws:s3:::${var.project_name}-${var.environment}-uploads/*"
+        Resource = [
+          "arn:aws:s3:::${var.project_name}-${var.environment}-uploads",
+          "arn:aws:s3:::${var.project_name}-${var.environment}-uploads/*"
+        ]
       }
     ]
   })
