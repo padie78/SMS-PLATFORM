@@ -4,7 +4,7 @@ const client = new BedrockRuntimeClient({ region: "eu-central-1" });
 
 exports.entenderConIA = async (summary, items) => {
     // 1. ID de Perfil de Inferencia (Obligatorio para evitar el error de On-Demand)
-    const modelId = "eu.anthropic.claude-3-haiku-20240307-v1:0";
+    const modelId = "eu.anthropic.claude-haiku-4-5-20251001-v1:0";
 
     const systemPrompt = `You are a specialized Sustainability Data Engineer. 
     Your role is to parse structured OCR data from utility invoices and map them to GHG Protocol and Climatiq API standards.
