@@ -17,7 +17,7 @@ async function calcularEnClimatiq(datosProcesadosPorIA) {
 
     // Estructura EXACTA que espera Climatiq para estimaciones basadas en actividad
     const body = {
-        activity_id: datosProcesadosPorIA.activity_id,
+        activity_id: "electricity-supply_grid-source_israel_grid",
         parameters: {
             [pType]: datosProcesadosPorIA.value,
             [`${pType}_unit`]: unidadNormalizada
