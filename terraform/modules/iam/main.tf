@@ -74,3 +74,27 @@ resource "aws_iam_role_policy_attachment" "attach_ai_policy" {
   role       = aws_iam_role.lambda_exec.name 
   policy_arn = aws_iam_policy.processor_ai_permissions.arn
 }
+
+# terraform/modules/iam/main.tf
+
+resource "aws_iam_role_policy" "textract_policy" {
+  name = "textract-analyze-expense-policy"
+  # REFERENCIA DINÁMICA: usa el nombre del recurso definido arriba en tu archivo
+  role = aws_iam_role.lambda_exec_role.name 
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["textract:AnalyzeExpense"]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "arn:aws:s3:::sms-platform-dev-uploads/*" # Usá variables para el bucket
+      }
+    ]
+  })
+}
