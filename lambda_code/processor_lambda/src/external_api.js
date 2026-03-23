@@ -4,7 +4,7 @@
  */
 async function calcularEnClimatiq(datosProcesadosPorIA) {
     // La URL v1/estimate es correcta, pero el body requiere una estructura específica
-    const url = "https://api.climatiq.io/data/v1/estimate";
+    const url = "https://api.climatiq.io/estimate";
     const apiKey = process.env.CLIMATIQ_API_KEY || "2E44QNZJMX5X5B6EM43E88KRZ8"; 
 
     if (!datosProcesadosPorIA.activity_id || !datosProcesadosPorIA.parameter_type) {
