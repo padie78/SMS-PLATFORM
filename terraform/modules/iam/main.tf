@@ -45,8 +45,11 @@ resource "aws_iam_policy" "processor_ai_permissions" {
         Effect   = "Allow"
         Action   = ["bedrock:InvokeModel"]
         Resource = [
-          "arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-*",
-          "arn:aws:bedrock:eu-central-1:*:inference-profile/eu.anthropic.claude-*"
+        # Permiso para el Perfil de Inferencia (el que usas en el código)
+          "arn:aws:bedrock:eu-central-1:*:inference-profile/eu.anthropic.claude-*",
+          
+          # Permiso para los modelos base en Europa (necesario para el balanceo automático)
+          "arn:aws:bedrock:eu-*:*:foundation-model/anthropic.claude-*"
         ]
       },
       {
