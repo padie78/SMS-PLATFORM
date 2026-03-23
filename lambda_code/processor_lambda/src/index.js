@@ -124,7 +124,7 @@ exports.handler = async (event) => {
             // 7. Persistencia
             console.log(`[STEP 4] Persistiendo en DynamoDB...`);
             await dynamo.send(new PutCommand({
-                TableName: process.env.DYNAMO_TABLE,
+                TableName: process.env.DYNAMO_TABLE || "sms-platform-dev-emissions",
                 Item: itemToPersist
             }));
 

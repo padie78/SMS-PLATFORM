@@ -40,10 +40,13 @@ async function calcularEnClimatiq(datosProcesadosPorIA) {
 
         // Devolvemos el resultado mapeado
         return {
+            calculation_id: data.calculation_id, // <--- ESTO ES LO QUE TE FALTA
             co2e: data.co2e,
-            unit: data.co2e_unit,
+            unit: data.co2e_unit || data.unit,
+            activity_id: data.emission_factor?.activity_id || "N/A",
             audit_trail: data.audit_trail,
-            calculation_id: data.calculation_id
+            // Tip: agrega el factor de emisión para auditoría
+            source: data.emission_factor?.source || "Climatiq"
         };
 
     } catch (error) {
