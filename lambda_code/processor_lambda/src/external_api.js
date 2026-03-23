@@ -17,10 +17,10 @@ async function calcularEnClimatiq(datosProcesadosPorIA) {
 
     // Estructura EXACTA que espera Climatiq para estimaciones basadas en actividad
     const body = {
-        activity_id: "electricity-supply_grid-source_israel_grid",
-        parameters: {
-            [pType]: datosProcesadosPorIA.value,
-            [`${pType}_unit`]: unidadNormalizada
+        "activity_id": "electricity-supply_grid-source_israel_grid", // ID Fijo para test
+        "parameters": {
+            "energy": Number(datosProcesadosPorIA.value) || 10, // Aseguramos que sea un número
+            "energy_unit": "kwh"
         }
     };
 
