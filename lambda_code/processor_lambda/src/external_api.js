@@ -1,26 +1,19 @@
-/**
- * Invocación a Climatiq API v1/estimate
- * Adaptado para el pipeline con Bedrock y Textract.
- */
 async function calcularEnClimatiq(datosProcesadosPorIA) {
     const url = "https://api.climatiq.io/data/v1/estimate";
-    const apiKey = process.env.CLIMATIQ_API_KEY;
+    // RECOMENDACIÓN: Usar variables de entorno siempre
+    const apiKey = process.env.CLIMATIQ_API_KEY || "2E44QNZJMX5X5B6EM43E88KRZ8"; 
 
-    if (!apiKey) {
-        throw new Error("CLIMATIQ_API_KEY no configurada en variables de entorno.");
-    }
+    // Construcción dinámica del payload
+    const parameters = {};
+    const pType = datosProcesadosPorIA.parameter_type; // Ej: 'energy'
+    
+    parameters[pType] = datosProcesadosPorIA.value;
+    parameters[`${pType}_unit`] = datosProcesadosPorIA.unit; // Ej: 'energy_unit': 'kWh'
 
-    // Mapeamos el JSON de Bedrock al formato que espera Climatiq
-    // Importante: Climatiq espera un campo dinámico en 'parameters' (energy, volume, weight, etc.)
     const body = {
         activity_id: datosProcesadosPorIA.activity_id,
-        parameters: {
-            [datosProcesadosPorIA.parameter_type]: datosProcesadosPorIA.value,
-            [`${datosProcesadosPorIA.parameter_type}_unit`]: datosProcesadosPorIA.unit
-        }
+        parameters: parameters
     };
-
-    console.log(`[CLIMATIQ] Calculando para ID: ${body.activity_id}`);
 
     try {
         const response = await fetch(url, {
@@ -35,29 +28,21 @@ async function calcularEnClimatiq(datosProcesadosPorIA) {
         const data = await response.json();
 
         if (!response.ok) {
-            console.error(`[CLIMATIQ_ERROR] Status: ${response.status}`, data);
-            // En producción, podrías lanzar el error o devolver un flag de revisión manual
-            throw new Error(data.message || "Error en la estimación de Climatiq");
+            // Logueamos el error completo de Climatiq para depurar IDs de actividad inválidos
+            console.error(`[CLIMATIQ_ERROR]`, JSON.stringify(data, null, 2));
+            throw new Error(`Climatiq API Error: ${data.error || data.message}`);
         }
 
-        /**
-         * La respuesta de Climatiq incluye:
-         * - co2e: La cantidad de carbono
-         * - co2e_unit: Generalmente 'kg'
-         * - audit_trail: Información de la fuente (Vital para tu certificación)
-         */
         return {
             co2e: data.co2e,
             unit: data.co2e_unit,
-            source: data.audit_trail,
-            calculation_id: data.calculation_id
+            audit_trail: data.audit_trail, // Crucial para reportes de sostenibilidad
+            calculation_id: data.calculation_id,
+            activity_data: data.activity_data // Información extra sobre el factor de emisión usado
         };
 
     } catch (error) {
         console.error("[CLIMATIQ_EXCEPTION]:", error.message);
-        // Evitá hardcodear 0.25 en producción; mejor marcá el registro como 'FAILED' en tu DB
         throw error; 
     }
 }
-
-module.exports = { calcularEnClimatiq };
