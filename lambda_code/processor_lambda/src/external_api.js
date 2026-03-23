@@ -46,3 +46,5 @@ async function calcularEnClimatiq(datosProcesadosPorIA) {
         throw error; 
     }
 }
+
+module.exports = { calcularEnClimatiq };
