@@ -7,7 +7,7 @@ exports.entenderConIA = async (summary, items) => {
     const modelId = "eu.anthropic.claude-haiku-4-5-20251001-v1:0";
 
     const systemPrompt = `You are a specialized Sustainability Data Engineer. 
-    Your role is to parse structured OCR data from utility invoices and map them to GHG Protocol and Climatiq API standards.
+    Your role is to parse structured OCR data and map them EXACTLY to Climatiq API standards.
     
     OUTPUT STRUCTURE (Strict JSON):
     {
@@ -15,19 +15,21 @@ exports.entenderConIA = async (summary, items) => {
         "vendor": "String",
         "invoice_date": "YYYY-MM-DD",
         "total_amount": Number,
-        "currency": "ISO Code",
-        "city": "String"
+        "currency": "ISO Code"
       },
       "ai_analysis": {
-        "service_type": "electricity|natural_gas|water|fuel|waste",
-        "scope": 1|2|3,
-        "suggested_query": "Climatiq-optimized search string",
-        "consumption_value": Number,
-        "consumption_unit": "kWh|L|m3|kg",
-        "confidence_score": Number,
-        "insight_text": "Short sustainability insight"
+        "activity_id": "String (Must be a valid Climatiq ID, e.g., 'electricity-supply_grid-source_mainland_uk_grid')",
+        "parameter_type": "energy|volume|weight|money",
+        "value": Number,
+        "unit": "kWh|m3|kg|l",
+        "confidence_score": Number
       }
     }
+
+    CRITICAL CONSTRAINTS:
+    - ALWAYS provide a default activity_id if unsure (e.g., 'electricity-supply_grid-source_mainland_uk_grid' for electricity).
+    - parameter_type MUST be one of: 'energy', 'volume', 'weight', 'money'.
+    - Respond ONLY with valid JSON.
 
     CONSTRAINTS:
     - Respond ONLY with valid JSON.
