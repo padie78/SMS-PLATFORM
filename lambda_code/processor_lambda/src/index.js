@@ -3,7 +3,7 @@ const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
 const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
 const crypto = require("crypto");
 
-// Importación de tus módulos
+// Importación de módulos
 const { extraerFactura } = require("./textract");
 const { entenderConIA } = require("./bedrock");
 const { calcularEnClimatiq } = require("./external_api");
@@ -25,39 +25,48 @@ exports.handler = async (event) => {
         const fileId = filename.split('.')[0] || Date.now().toString();
 
         try {
-            console.log(`[START] Procesando ${filename} para la organización: ${orgId}`);
+            console.log(`[PIPELINE_START] Archivo: ${filename} | Org: ${orgId}`);
 
-            // 1. Obtener el Hash (Detección de duplicados)
+            // 1. Hash del archivo
             const s3Response = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
             const chunks = [];
             for await (const chunk of s3Response.Body) { chunks.push(chunk); }
             const fileBuffer = Buffer.concat(chunks);
             const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+            console.log(`[S3_HASH_SUCCESS] Hash: ${fileHash.substring(0, 10)}...`);
 
-            // 2. OCR - Textract (Modo asíncrono/polling para PDFs)
-            // 'factura' contendrá { summary, items }
+            // 2. OCR - Textract
+            console.log(`[STEP 1] Iniciando Textract para: ${key}`);
             const factura = await extraerFactura(bucket, key);
-            console.log(`[OCR SUCCESS] Texto extraído correctamente`);
+            
+            // Logueamos el objeto crudo que sale de Textract
+            console.log(`[DEBUG_OCR_DATA] Datos extraídos por Textract:`, JSON.stringify(factura, null, 2));
 
-            // 3. IA - Bedrock (Pasamos summary e items por separado para mayor claridad)
-            // IMPORTANTE: Asegúrate de usar "anthropic.claude-3-5-haiku-20241022-v1:0" dentro de entenderConIA
-            const { extracted_data, ai_analysis } = await entenderConIA(factura.summary, factura.items);
-            console.log(`[AI SUCCESS] Entendimiento de factura completado`);
+            // 3. IA - Bedrock
+            console.log(`[STEP 2] Enviando a Bedrock (Claude 3.5 Haiku)`);
+            const aiResponse = await entenderConIA(factura.summary, factura.items);
+            
+            // Logueamos la respuesta de la IA
+            console.log(`[DEBUG_AI_RESPONSE] Respuesta de Bedrock:`, JSON.stringify(aiResponse, null, 2));
+
+            const { extracted_data, ai_analysis } = aiResponse;
 
             // 4. Carbono - Climatiq
+            console.log(`[STEP 3] Calculando huella en Climatiq para: ${ai_analysis.service_type}`);
             const climatiq_result = await calcularEnClimatiq(ai_analysis);
+            console.log(`[DEBUG_CLIMATIQ_RESULT] Resultado Climatiq:`, JSON.stringify(climatiq_result, null, 2));
 
             const now = new Date().toISOString();
             const [datePart] = now.split('T');
 
-            // 5. Lógica de Análisis
+            // 5. Métricas y Lógica
             const carbonIntensity = extracted_data.total_amount > 0 
                 ? (climatiq_result.co2e / extracted_data.total_amount).toFixed(5) 
                 : 0;
 
             const requiresReview = (ai_analysis.confidence_score || 0) < 0.85;
 
-            // 6. Construcción del Golden Record
+            // 6. Golden Record
             const itemToPersist = {
                 PK: `ORG#${orgId}`,
                 SK: `INV#${datePart}#${fileId}`,
@@ -80,7 +89,7 @@ exports.handler = async (event) => {
                     client_number: extracted_data.client_number || "N/A"
                 },
                 ai_analysis: {
-                    model: "claude-3-5-haiku-20241022", // Nombre del modelo actualizado
+                    model: "claude-3-5-haiku-20241022",
                     service_type: ai_analysis.service_type,
                     scope: ai_analysis.scope || 2,
                     suggested_query: ai_analysis.suggested_query,
@@ -112,25 +121,27 @@ exports.handler = async (event) => {
                 }
             };
 
-            // 7. Persistencia Dual
+            // 7. Persistencia
+            console.log(`[STEP 4] Persistiendo en DynamoDB...`);
             await dynamo.send(new PutCommand({
                 TableName: process.env.DYNAMO_TABLE,
                 Item: itemToPersist
             }));
 
-            await dynamo.send(new PutCommand({
-                TableName: process.env.DYNAMO_TABLE,
-                Item: { 
-                    ...itemToPersist, 
-                    SK: `LATEST#METRIC` 
-                }
-            }));
-
-            console.log(`[SUCCESS] Factura ${fileId} finalizada.`);
+            console.log(`[PIPELINE_SUCCESS] Factura ${fileId} procesada. CO2: ${climatiq_result.co2e}kg`);
             results.push({ key, status: 'success' });
 
         } catch (err) {
-            console.error(`[ERROR] Falló procesamiento de ${key}:`, err);
+            // Log de error detallado con stack trace
+            console.error(`[PIPELINE_ERROR] Error crítico procesando ${key}:`);
+            console.error(`Mensaje: ${err.message}`);
+            console.error(`Stack: ${err.stack}`);
+            
+            // Logueamos el error específico si es de AWS
+            if (err.$metadata) {
+                console.error(`AWS Error Metadata:`, JSON.stringify(err.$metadata));
+            }
+
             results.push({ key, status: 'error', message: err.message });
         }
     }
