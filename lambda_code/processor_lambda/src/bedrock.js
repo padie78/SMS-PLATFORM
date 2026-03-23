@@ -1,6 +1,6 @@
 const { BedrockRuntimeClient, InvokeModelCommand } = require("@aws-sdk/client-bedrock-runtime");
 
-const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || "eu-central-1" });
+const client = new BedrockRuntimeClient({ region: "eu-central-1" });
 
 exports.entenderConIA = async (summary, items) => {
     // 1. ID de Perfil de Inferencia (Obligatorio para evitar el error de On-Demand)
