@@ -1,4 +1,15 @@
-// ... (imports)
+const crypto = require("crypto");
+const { S3Client } = require("@aws-sdk/client-s3");
+
+// Importación de módulos de infraestructura y lógica
+const { extraerFactura } = require("./textract");
+const { entenderConIA } = require("./bedrock");
+const { calcularEnClimatiq } = require("./external_api");
+const { saveInvoiceWithStats } = require("./db");
+const { downloadFromS3, buildGoldenRecord } = require("./utils");
+
+// Inicialización de cliente (fuera del handler para reutilizar ejecución en Lambda)
+const s3Client = new S3Client({ region: process.env.AWS_REGION || "eu-central-1" });
 
 exports.handler = async (event) => {
     const results = [];
