@@ -2,7 +2,7 @@ const { TextractClient, AnalyzeDocumentCommand } = require("@aws-sdk/client-text
 
 const textractClient = new TextractClient({ region: process.env.AWS_REGION || "eu-central-1" });
 
-exports.extraerFactura = async (s3Client, bucket, key) => {
+exports.extraerFactura = async (bucket, key) => {
     // 1. Validación de extensión rápida
     const extension = key.split('.').pop().toLowerCase();
     const validExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'tiff'];
