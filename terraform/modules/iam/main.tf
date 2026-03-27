@@ -50,7 +50,9 @@ resource "aws_iam_policy" "processor_ai_permissions" {
           "textract:DetectDocumentText",
           "textract:AnalyzeExpense",
           "textract:StartExpenseAnalysis",
-          "textract:GetExpenseAnalysis"
+          "textract:GetExpenseAnalysis",
+          "textract:AnalyzeDocument"
+          
         ]
         Resource = "*" 
       },
