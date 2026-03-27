@@ -1,87 +1,96 @@
-const { TextractClient, AnalyzeExpenseCommand } = require("@aws-sdk/client-textract");
+const { 
+    TextractClient, 
+    StartExpenseAnalysisCommand, 
+    GetExpenseAnalysisCommand 
+} = require("@aws-sdk/client-textract");
 
-// Optimizamos el cliente fuera del handler
 const textractClient = new TextractClient({ region: process.env.AWS_REGION || "eu-central-1" });
 
 /**
- * Utiliza AnalyzeExpense para procesar facturas multipágina de forma síncrona.
- * Soporta hasta 30 páginas y detecta automáticamente campos financieros.
+ * Procesa facturas mediante StartExpenseAnalysis (Asíncrono).
+ * Ideal para PDFs de varias páginas que fallan en el modo síncrono.
  */
 exports.extraerFactura = async (bucket, key) => {
-    console.log(`[TEXTRACT] Iniciando AnalyzeExpense en s3://${bucket}/${key}`);
-    
-    // Validación rápida de extensión (aunque S3 debería filtrarlo antes)
-    const extension = key.split('.').pop().toLowerCase();
-    
-    const params = {
-        Document: {
-            S3Object: {
-                Bucket: bucket,
-                Name: key
-            }
-        }
-    };
+    console.log(`[TEXTRACT] Iniciando flujo asíncrono para s3://${bucket}/${key}`);
 
     try {
-        const command = new AnalyzeExpenseCommand(params);
-        const response = await textractClient.send(command);
-        const pageCount = response.DocumentMetadata?.Pages || 1;
-        console.log(`[TEXTRACT_SUCCESS] Documento de ${pageCount} páginas procesado.`);
+        // 1. DISPARAR EL ANÁLISIS
+        const startCommand = new StartExpenseAnalysisCommand({
+            DocumentLocation: { S3Object: { Bucket: bucket, Name: key } }
+        });
+        const { JobId } = await textractClient.send(startCommand);
+        console.log(`[TEXTRACT] JobId generado: ${JobId}`);
 
+        // 2. POLLING (Espera activa)
+        // Las facturas de 3 páginas suelen tardar entre 3 y 8 segundos.
+        let finished = false;
+        let response;
+        let attempts = 0;
+        const maxAttempts = 20; 
 
-        // 1. Extraemos TODO el texto de las 3 páginas para darle contexto a Bedrock
-        const fullText = response.Blocks
+        while (!finished && attempts < maxAttempts) {
+            attempts++;
+            // Esperamos 2 segundos entre intentos para no saturar el API
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            const getCommand = new GetExpenseAnalysisCommand({ JobId });
+            response = await textractClient.send(getCommand);
+
+            console.log(`[TEXTRACT] Estado del Job: ${response.JobStatus} (Intento ${attempts})`);
+
+            if (response.JobStatus === "SUCCEEDED") {
+                finished = true;
+            } else if (response.JobStatus === "FAILED") {
+                throw new Error(`Textract Job ${JobId} failed: ${response.StatusMessage}`);
+            }
+        }
+
+        if (!finished) {
+            throw new Error("Timeout: Textract tardó demasiado en procesar el documento.");
+        }
+
+        // 3. PROCESAR RESULTADOS (Igual que tu lógica anterior)
+        // Nota: GetExpenseAnalysis devuelve los bloques de texto en 'Blocks'
+        const fullText = (response.Blocks || [])
             .filter(b => b.BlockType === "LINE")
             .map(b => b.Text)
             .join(" ");
 
-        // 2. Mapeamos los campos normalizados que Textract encuentra por defecto
-        // Nos enfocamos en el primer documento detectado (el PDF completo)
-        const expenseDoc = response.ExpenseDocuments[0];
+        const expenseDoc = response.ExpenseDocuments?.[0];
         const rawHints = {};
 
-        if (expenseDoc && expenseDoc.SummaryFields) {
+        if (expenseDoc?.SummaryFields) {
             expenseDoc.SummaryFields.forEach(field => {
-                // Mapeamos el Label técnico a un nombre amigable
-                const label = field.Type.Text || "UNKNOWN";
+                const label = field.Type?.Text || "UNKNOWN";
                 const value = field.ValueDetection?.Text || null;
                 rawHints[label] = value;
             });
         }
 
-        // 3. Normalización de campos para mantener compatibilidad con tu esquema previo
-        // AnalyzeExpense usa nombres de campos estándar de AWS
+        // Mantenemos tus query_hints originales para Bedrock
         const query_hints = {
             VENDOR: rawHints.VENDOR_NAME || rawHints.NAME,
             TOTAL_AMOUNT: rawHints.TOTAL || rawHints.AMOUNT_DUE,
             CURRENCY: rawHints.CURRENCY || null,
             INVOICE_DATE: rawHints.INVOICE_RECEIPT_DATE || rawHints.DATE,
             INVOICE_NUMBER: rawHints.INVOICE_RECEIPT_ID,
-            // Estos campos suelen venir en 'LineItems' o como campos genéricos
             ACCOUNT_ID: rawHints.ACCOUNT_NUMBER || rawHints.CUSTOMER_NUMBER,
             ADDRESS: rawHints.VENDOR_ADDRESS || rawHints.RECEIVER_ADDRESS,
-            // El consumo a veces viene en LineItems, pero Bedrock lo encontrará en el summary
-            RAW_HINTS: rawHints // Mantenemos los crudos por si Bedrock quiere excavar más
+            RAW_HINTS: rawHints
         };
 
         return {
             summary: fullText.trim(),
             query_hints: query_hints,
             metadata: {
-                pages: response.DocumentMetadata.Pages,
-                method: "AnalyzeExpense",
-                format: extension
+                pages: response.DocumentMetadata?.Pages || 0,
+                method: "StartExpenseAnalysis",
+                jobId: JobId
             }
         };
 
     } catch (error) {
         console.error("[TEXTRACT_CRITICAL_ERROR]:", error.message);
-        
-        // Error específico cuando el PDF es ilegible o protegido
-        if (error.name === "UnsupportedDocumentException") {
-            throw new Error("The PDF is encrypted, corrupted, or not supported by AWS Textract.");
-        }
-        
-        throw new Error(`Textract Failed: ${error.message}`);
+        throw error;
     }
 };
