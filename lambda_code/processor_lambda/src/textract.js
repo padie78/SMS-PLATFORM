@@ -1,81 +1,127 @@
-const { 
-  TextractClient, 
-  StartExpenseAnalysisCommand, 
-  GetExpenseAnalysisCommand 
-} = require("@aws-sdk/client-textract");
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
+const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
+const crypto = require("crypto");
 
-const client = new TextractClient({ region: process.env.AWS_REGION || "eu-central-1" });
+// Importación de tus módulos (deben estar en la misma carpeta o como Layers)
+const { extraerFactura } = require("./textract");
+const { entenderConIA } = require("./bedrock");
+const { calcularEnClimatiq } = require("./external_api");
 
-exports.extraerFactura = async (bucket, key) => {
-  try {
-    // 1. Iniciar el análisis (Asíncrono)
-    // Usamos DocumentLocation, que es el estándar para archivos en S3
-    const startCommand = new StartExpenseAnalysisCommand({
-      DocumentLocation: {
-        S3Object: {
-          Bucket: bucket,
-          Name: key
+const ddbClient = new DynamoDBClient({ region: process.env.AWS_REGION || "eu-central-1" });
+const dynamo = DynamoDBDocumentClient.from(ddbClient, {
+    marshallOptions: { removeUndefinedValues: true, convertEmptyValues: true },
+});
+const s3Client = new S3Client({ region: process.env.AWS_REGION || "eu-central-1" });
+
+exports.handler = async (event) => {
+    const results = [];
+
+    for (const record of event.Records) {
+        const bucket = record.s3.bucket.name;
+        const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, ' '));
+        
+        // Extracción de contexto multi-tenant
+        const parts = key.split('/');
+        const orgId = parts[1] || 'UNKNOWN_ORG'; 
+        const filename = parts[parts.length - 1];
+        const fileId = filename.split('.')[0] || Date.now().toString();
+
+        try {
+            console.log(`[PIPELINE_START] Procesando: ${filename} para Org: ${orgId}`);
+
+            // 1. Obtener Buffer y generar Hash para evitar duplicados futuros
+            const s3Response = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+            const chunks = [];
+            for await (const chunk of s3Response.Body) { chunks.push(chunk); }
+            const fileBuffer = Buffer.concat(chunks);
+            const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+
+            // 2. OCR - Textract (Ahora configurado para capturar Service Dates)
+            const facturaRaw = await extraerFactura(bucket, key);
+            
+            // 3. IA - Bedrock (Con el nuevo System Prompt Blindado)
+            const aiResponse = await entenderConIA(facturaRaw.summary, facturaRaw.items);
+            const { extracted_data = {}, ai_analysis = {} } = aiResponse;
+
+            // 4. Carbono - Climatiq (Llamada con los Enums normalizados)
+            const climatiqResult = await calcularEnClimatiq(ai_analysis) || {};
+
+            const now = new Date().toISOString();
+            const [today] = now.split('T');
+
+            // 5. Lógica de Negocio e Indicadores de Sostenibilidad
+            const totalAmount = Number(extracted_data.total_amount) || 0;
+            const co2Value = Number(climatiqResult.co2e) || 0;
+            
+            // Métrica Pro: Intensidad de Carbono (CO2 por cada unidad monetaria)
+            const carbonIntensity = totalAmount > 0 ? (co2Value / totalAmount).toFixed(5) : 0;
+
+            // 6. Construcción del "Golden Record" para DynamoDB
+            const itemToPersist = {
+                PK: `ORG#${orgId}`,
+                SK: `INV#${extracted_data.invoice_date || today}#${fileId}`,
+                metadata: {
+                    filename,
+                    s3_key: key,
+                    file_hash: fileHash,
+                    processed_at: now,
+                    status: "PROCESSED",
+                    ai_model: "claude-3-5-haiku-v2"
+                },
+                extracted_data: {
+                    vendor: extracted_data.vendor || "UNKNOWN",
+                    invoice_number: extracted_data.invoice_number || "N/A",
+                    invoice_date: extracted_data.invoice_date || today,
+                    period_start: extracted_data.period_start || null,
+                    period_end: extracted_data.period_end || null,
+                    total_amount: totalAmount,
+                    currency: extracted_data.currency || "USD",
+                    raw_consumption: extracted_data.raw_consumption || 0,
+                    raw_unit: extracted_data.raw_unit || "unit"
+                },
+                ai_analysis: {
+                    service_type: ai_analysis.service_type, // Enum: Electricity, Gas...
+                    scope: ai_analysis.scope,               // Enum: 1, 2, 3
+                    calculation_method: ai_analysis.calculation_method, // Enum: consumption_based, spend_based
+                    activity_id: ai_analysis.activity_id,
+                    parameter_type: ai_analysis.parameter_type,
+                    value: Number(ai_analysis.value) || 0,
+                    unit: ai_analysis.unit,
+                    confidence_score: ai_analysis.confidence_score || 0,
+                    requires_review: ai_analysis.requires_review || (ai_analysis.confidence_score < 0.85),
+                    is_estimated_reading: !!ai_analysis.is_estimated_reading,
+                    insight_text: ai_analysis.insight_text || ""
+                },
+                climatiq_result: {
+                    co2e: co2Value,
+                    co2e_unit: "kg",
+                    activity_id: climatiqResult.activity_id || ai_analysis.activity_id,
+                    calculation_id: climatiqResult.calculation_id || "N/A",
+                    audit_trail: "climatiq_api_v3"
+                },
+                analytics_dimensions: {
+                    period_year: parseInt((extracted_data.invoice_date || today).split('-')[0]),
+                    period_month: parseInt((extracted_data.invoice_date || today).split('-')[1]),
+                    carbon_intensity: parseFloat(carbonIntensity),
+                    country: "AR", // Podría dinamizarse con extracted_data.country
+                    sector: "CONSTRUCTION"
+                }
+            };
+
+            // 7. Persistencia Final
+            await dynamo.send(new PutCommand({
+                TableName: process.env.DYNAMO_TABLE || "EmissionsData",
+                Item: itemToPersist
+            }));
+
+            console.log(`[PIPELINE_SUCCESS] Factura ${fileId} guardada con éxito.`);
+            results.push({ key, status: 'success' });
+
+        } catch (err) {
+            console.error(`[PIPELINE_ERROR] Fallo en ${key}: ${err.message}`);
+            results.push({ key, status: 'error', message: err.message });
         }
-      }
-    });
-
-    const { JobId } = await client.send(startCommand);
-    console.log(`Análisis iniciado. JobId: ${JobId}`);
-
-    // 2. Esperar a que Textract termine de procesar (Polling)
-    let finished = false;
-    let response;
-
-    while (!finished) {
-      // Esperamos 2 segundos entre intentos para no saturar la API
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const getCommand = new GetExpenseAnalysisCommand({ JobId });
-      response = await client.send(getCommand);
-
-      if (response.JobStatus === "SUCCEEDED") {
-        finished = true;
-      } else if (response.JobStatus === "FAILED") {
-        throw new Error(`El análisis de Textract falló para el JobId: ${JobId}`);
-      }
-      // Si sigue IN_PROGRESS, el bucle continúa
     }
-
-    // 3. Procesar los resultados (Soporta múltiples documentos/páginas)
-    const allSummaryFields = {};
-    const allLineItems = [];
-
-    for (const doc of response.ExpenseDocuments) {
-      // Extraer Resumen
-      doc.SummaryFields?.forEach(field => {
-        const type = field.Type?.Text;
-        const value = field.ValueDetection?.Text;
-        if (type) allSummaryFields[type] = value;
-      });
-
-      // Extraer Ítems de línea
-      doc.LineItemGroups?.forEach(group => {
-        group.LineItems?.forEach(item => {
-          const itemData = {};
-          item.LineItemExpenseFields.forEach(f => {
-            const type = f.Type?.Text;
-            const value = f.ValueDetection?.Text;
-            if (type) itemData[type] = value;
-          });
-          allLineItems.push(itemData);
-        });
-      });
-    }
-
-    return {
-      summary: allSummaryFields,
-      items: allLineItems,
-      jobId: JobId,
-      rawResponse: response 
-    };
-
-  } catch (error) {
-    console.error("Error en el flujo de extracción:", error);
-    throw error;
-  }
+    return results;
 };

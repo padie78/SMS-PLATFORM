@@ -2,56 +2,53 @@ resource "aws_dynamodb_table" "emissions_table" {
   name         = "${var.project_name}-${var.environment}-emissions"
   billing_mode = var.billing_mode
 
-  hash_key  = var.hash_key
-  range_key = var.range_key 
+  # PK: Siempre será "ORG#<UUID>"
+  hash_key  = "PK" 
+  # SK: Será "INV#..." para facturas o "STATS#..." para totales
+  range_key = "SK" 
 
-  # Claves principales
   attribute { 
-    name = var.hash_key
+    name = "PK"
     type = "S" 
   }
   
   attribute { 
-    name = var.range_key
+    name = "SK"
     type = "S" 
   }
 
-  # Claves para GSI
+  # Atributos para el GSI (Consultas transversales)
   attribute { 
-    name = var.gsi_hash_key
+    name = "GSI1_PK" # Ej: service_type
     type = "S" 
   }
   
   attribute { 
-    name = var.gsi_range_key
+    name = "GSI1_SK" # Ej: timestamp o co2_value
     type = "S" 
   }
 
-  # Índice secundario global
   global_secondary_index {
-    name            = var.gsi_name
-    hash_key        = var.gsi_hash_key
-    range_key       = var.gsi_range_key
+    name            = "GSI_Analytical"
+    hash_key        = "GSI1_PK"
+    range_key       = "GSI1_SK"
     projection_type = "ALL"
   }
 
-  ttl {
-    attribute_name = var.ttl_attribute_name
-    enabled        = var.enable_ttl
+  # Recomendado para auditoría: PITR habilitado siempre en producción
+  point_in_time_recovery {
+    enabled = true
   }
 
   server_side_encryption {
-    enabled = var.encryption_enabled
-  }
-
-  point_in_time_recovery {
-    enabled = var.point_in_time_recovery_enabled
+    enabled = true
   }
 
   tags = merge(
     {
       Project     = var.project_name
       Environment = var.environment
+      Design      = "Single-Table-Pattern"
     },
     var.tags
   )

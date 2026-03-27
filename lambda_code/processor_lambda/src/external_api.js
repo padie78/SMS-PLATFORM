@@ -1,25 +1,36 @@
 /**
  * Invocación a Climatiq API v1/estimate
- * Siguiendo estrictamente la estructura del cURL oficial
+ * Adaptada para manejar múltiples tipos de servicios y métodos de cálculo.
  */
-async function calcularEnClimatiq(datosProcesadosPorIA) {
+async function calcularEnClimatiq(ai_analysis) {
     const url = "https://api.climatiq.io/data/v1/estimate";
-    const apiKey = process.env.CLIMATIQ_API_KEY || "2E44QNZJMX5X5B6EM43E88KRZ8"; 
+    // RECOMENDACIÓN: Siempre usa variables de entorno para la API Key
+    const apiKey = process.env.CLIMATIQ_API_KEY; 
 
-    // ESTRUCTURA SEGÚN TU CURL: El activity_id VA DENTRO de emission_factor
+    // 1. Construcción dinámica de los parámetros según la decisión de Bedrock
+    const parameters = {};
+    
+    if (ai_analysis.calculation_method === "spend_based") {
+        // Si no hubo unidades físicas, usamos dinero
+        parameters.money = Number(ai_analysis.value);
+        parameters.currency = ai_analysis.unit; // En este caso unit trae el ISO de moneda (ARS, USD)
+    } else {
+        // Si hubo unidades físicas (kWh, m3, l, etc.)
+        const type = ai_analysis.parameter_type; // 'energy', 'volume', 'weight'
+        parameters[type] = Number(ai_analysis.value);
+        parameters[`${type}_unit`] = ai_analysis.unit;
+    }
+
+    // 2. Estructura del Body según la documentación de Climatiq
     const body = {
         "emission_factor": {
-            // Este ID es el que usa Climatiq en su documentación de ejemplo
-            "activity_id": "electricity-supply_grid-source_residual_mix",
+            "activity_id": ai_analysis.activity_id,
             "data_version": "^21" 
         },
-        "parameters": {
-            "energy": Number(datosProcesadosPorIA.value) || 10,
-            "energy_unit": "kWh" // Mantén la 'W' mayúscula como en el cURL
-        }
+        "parameters": parameters
     };
 
-    console.log(`[CLIMATIQ_DEBUG] Enviando estructura oficial:`, JSON.stringify(body));
+    console.log(`[CLIMATIQ_INVOKE] Metodo: ${ai_analysis.calculation_method} | Activity: ${ai_analysis.activity_id}`);
 
     try {
         const response = await fetch(url, {
@@ -34,24 +45,26 @@ async function calcularEnClimatiq(datosProcesadosPorIA) {
         const data = await response.json();
 
         if (!response.ok) {
+            // Manejo de errores específico de Climatiq
             console.error(`[CLIMATIQ_ERROR] Status: ${response.status}`, JSON.stringify(data, null, 2));
-            throw new Error(data.message || `Error en Climatiq: ${data.error_code}`);
+            throw new Error(`Climatiq API Error: ${data.message || data.error_code}`);
         }
 
-        // Devolvemos el resultado mapeado
+        // 3. Retorno de datos para el "Golden Record" de DynamoDB
         return {
-            calculation_id: data.calculation_id, // <--- ESTO ES LO QUE TE FALTA
+            calculation_id: data.calculation_id, 
             co2e: data.co2e,
-            unit: data.co2e_unit || data.unit,
-            activity_id: data.emission_factor?.activity_id || "N/A",
+            co2e_unit: data.co2e_unit,
+            activity_id: data.emission_factor?.activity_id,
+            intensity_factor: data.constituent_gases?.co2e_total || 0, // Útil para auditorías profundas
             audit_trail: data.audit_trail,
-            // Tip: agrega el factor de emisión para auditoría
-            source: data.emission_factor?.source || "Climatiq"
+            timestamp: new Date().toISOString()
         };
 
     } catch (error) {
         console.error("[CLIMATIQ_EXCEPTION]:", error.message);
-        throw error; 
+        // Devolvemos un objeto vacío o nulo para que la Lambda principal pueda manejar el fallback
+        return null; 
     }
 }
 

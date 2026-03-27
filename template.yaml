@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: SMS-PLATFORM - Infraestructura Serverless Local
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Timeout: 60
+    MemorySize: 512
+    Environment:
+      Variables:
+        DYNAMO_TABLE: CarbonoStats
+        CLIMATIQ_API_KEY: !Ref ClimatiqKey
+
+Resources:
+  # --- LA LAMBDA QUE PROCESA EL S3 ---
+  ProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      # Ruta relativa desde la raíz del proyecto
+      CodeUri: lambda_code/processor_lambda/src/
+      Handler: index.handler
+      Policies:
+        - AmazonS3ReadOnlyAccess
+        - AmazonDynamoDBFullAccess
+        - AmazonBedrockFullAccess
+
+  # --- LA LAMBDA QUE FIRMA LOS TOKENS/URLS ---
+  SignerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambda_code/signer_lambda/src/
+      Handler: index.handler
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /sign
+            Method: post
+
+  # --- RECURSOS COMPARTIDOS (Opcional para tests) ---
+  CarbonoTable:
+    Type: AWS::Serverless::SimpleTable
+    # --- AGREGÁ ESTO ---
+    DeletionPolicy: Retain # O 'Delete' si es puramente para desarrollo
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: CarbonoStats
+      PrimaryKey:
+        Name: PK
+        Type: String
+      # Nota: SimpleTable es limitada, si vas a usar SK (Sort Key), 
+      # deberías usar AWS::DynamoDB::Table
