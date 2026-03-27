@@ -1,29 +1,29 @@
 /**
  * Invocación a Climatiq API v1/estimate
- * Optimizada para resiliencia y auditoría técnica.
+ * Exportada para uso externo en el pipeline de procesamiento.
  */
 async function calcularEnClimatiq(ai_analysis) {
     const url = "https://api.climatiq.io/data/v1/estimate";
-    const apiKey = process.env.EMISSIONS_API_KEY || "dummy-key"
+    // Priorizamos EMISSIONS_API_KEY que es como lo tenés en Terraform
+    const apiKey = (process.env.EMISSIONS_API_KEY || process.env.CLIMATIQ_API_KEY || "").trim();
 
     if (!apiKey) {
-        console.error("[CLIMATIQ_CONFIG_ERROR]: API Key no configurada.");
-        return null;
+        console.error("[CLIMATIQ_CONFIG_ERROR]: API Key no encontrada en variables de entorno.");
+        return { co2e: 0, error: true, message: "Missing API Key" };
     }
 
-    // 1. Normalización de Unidades (Blindaje contra Bedrock)
-    // Evita que "kilovatios" o "KWH" rompan la API de Climatiq
+    // 1. Normalización de Unidades
     const unitMap = { "kilowatt-hour": "kWh", "kilovatios": "kWh", "kwh": "kWh", "m3": "m3", "litros": "l" };
     const normalizedUnit = unitMap[ai_analysis.unit?.toLowerCase()] || ai_analysis.unit;
 
     // 2. Construcción del Payload
     const parameters = {};
     if (ai_analysis.calculation_method === "spend_based") {
-        parameters.money = Number(ai_analysis.value);
+        parameters.money = Number(ai_analysis.value) || 0;
         parameters.currency = ai_analysis.unit?.toUpperCase() || "USD";
     } else {
         const type = ai_analysis.parameter_type || "energy"; 
-        parameters[type] = Number(ai_analysis.value);
+        parameters[type] = Number(ai_analysis.value) || 0;
         parameters[`${type}_unit`] = normalizedUnit;
     }
 
@@ -35,16 +35,16 @@ async function calcularEnClimatiq(ai_analysis) {
         parameters
     };
 
-    // 3. Control de Timeout (Evita que la Lambda pague tiempo de espera infinito)
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000); // 8 segundos max
+    const timeout = setTimeout(() => controller.abort(), 8000);
 
     try {
         const response = await fetch(url, {
             method: "POST",
             signal: controller.signal,
             headers: {
-                "x-api-key": apiKey,
+                // Formato Bearer: El estándar actual de Climatiq
+                "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json"
             },
             body: JSON.stringify(body)
@@ -57,29 +57,29 @@ async function calcularEnClimatiq(ai_analysis) {
             throw new Error(`Climatiq_${response.status}: ${data.message || data.error_code}`);
         }
 
-        // 4. Retorno con metadata de auditoría (ISO 14064 ready)
         return {
             calculation_id: data.calculation_id,
             co2e: Number(data.co2e),
             co2e_unit: data.co2e_unit || "kg",
             activity_id: data.emission_factor?.activity_id,
-            source: data.emission_factor?.source_name,
-            uncertainty: data.uncertainty || null, // Nivel de duda del cálculo
             audit_trail: "climatiq_api_v1_estimate",
             timestamp: new Date().toISOString()
         };
 
     } catch (error) {
         clearTimeout(timeout);
-        if (error.name === 'AbortError') {
-            console.error("[CLIMATIQ_TIMEOUT]: La API tardó demasiado.");
-        } else {
-            console.error("[CLIMATIQ_EXCEPTION]:", error.message);
-        }
+        console.error("[CLIMATIQ_EXCEPTION]:", error.message);
         
-        // Retornamos un objeto "Safe Fallback" para no romper el TransactWrite de DynamoDB
-        return { co2e: 0, co2e_unit: "kg", error: true, message: error.message };
+        // Fallback para evitar que DynamoDB cancele la transacción por campos faltantes
+        return { 
+            co2e: 0, 
+            co2e_unit: "kg", 
+            error: true, 
+            message: error.message,
+            calculation_id: "ERROR_API_FALLBACK" 
+        };
     }
 }
 
+// CRÍTICO: Esto permite que sea llamado desde el index.js u otros módulos
 module.exports = { calcularEnClimatiq };
