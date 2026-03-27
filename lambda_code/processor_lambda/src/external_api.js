@@ -1,29 +1,42 @@
 /**
  * Invocación a Climatiq API v1/estimate
- * Exportada para uso externo en el pipeline de procesamiento.
+ * Adaptada para corregir el error 400 (invalid field: currency)
  */
 async function calcularEnClimatiq(ai_analysis) {
     const url = "https://api.climatiq.io/data/v1/estimate";
-    // Priorizamos EMISSIONS_API_KEY que es como lo tenés en Terraform
+    
+    // Usamos la key directa para descartar problemas de inyección de variables
     const apiKey = "2E44QNZJMX5X5B6EM43E88KRZ8";
 
     if (!apiKey) {
-        console.error("[CLIMATIQ_CONFIG_ERROR]: API Key no encontrada en variables de entorno.");
+        console.error("[CLIMATIQ_CONFIG_ERROR]: API Key no encontrada.");
         return { co2e: 0, error: true, message: "Missing API Key" };
     }
 
     // 1. Normalización de Unidades
-    const unitMap = { "kilowatt-hour": "kWh", "kilovatios": "kWh", "kwh": "kWh", "m3": "m3", "litros": "l" };
+    const unitMap = { 
+        "kilowatt-hour": "kWh", 
+        "kilovatios": "kWh", 
+        "kwh": "kWh", 
+        "m3": "m3", 
+        "litros": "l",
+        "usd": "usd",
+        "eur": "eur"
+    };
     const normalizedUnit = unitMap[ai_analysis.unit?.toLowerCase()] || ai_analysis.unit;
 
-    // 2. Construcción del Payload
+    // 2. Construcción del Payload (FIX: Money Unit)
     const parameters = {};
+    const valorNumerico = Number(ai_analysis.value) || 0;
+
     if (ai_analysis.calculation_method === "spend_based") {
-        parameters.money = Number(ai_analysis.value) || 0;
-        parameters.currency = ai_analysis.unit?.toUpperCase() || "USD";
+        // CORRECTO: Climatiq v1 espera 'money' y 'money_unit'
+        parameters.money = valorNumerico;
+        parameters.money_unit = ai_analysis.unit?.toLowerCase() || "usd"; 
     } else {
+        // CORRECTO: Activity-based
         const type = ai_analysis.parameter_type || "energy"; 
-        parameters[type] = Number(ai_analysis.value) || 0;
+        parameters[type] = valorNumerico;
         parameters[`${type}_unit`] = normalizedUnit;
     }
 
@@ -39,11 +52,12 @@ async function calcularEnClimatiq(ai_analysis) {
     const timeout = setTimeout(() => controller.abort(), 8000);
 
     try {
+        console.log(`[CLIMATIQ_DEBUG] Enviando Payload: ${JSON.stringify(body)}`);
+
         const response = await fetch(url, {
             method: "POST",
             signal: controller.signal,
             headers: {
-                // Formato Bearer: El estándar actual de Climatiq
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json"
             },
@@ -54,6 +68,7 @@ async function calcularEnClimatiq(ai_analysis) {
         const data = await response.json();
 
         if (!response.ok) {
+            // Esto nos dirá exactamente qué campo falla si vuelve el 400
             throw new Error(`Climatiq_${response.status}: ${data.message || data.error_code}`);
         }
 
@@ -70,7 +85,6 @@ async function calcularEnClimatiq(ai_analysis) {
         clearTimeout(timeout);
         console.error("[CLIMATIQ_EXCEPTION]:", error.message);
         
-        // Fallback para evitar que DynamoDB cancele la transacción por campos faltantes
         return { 
             co2e: 0, 
             co2e_unit: "kg", 
@@ -81,5 +95,4 @@ async function calcularEnClimatiq(ai_analysis) {
     }
 }
 
-// CRÍTICO: Esto permite que sea llamado desde el index.js u otros módulos
 module.exports = { calcularEnClimatiq };
