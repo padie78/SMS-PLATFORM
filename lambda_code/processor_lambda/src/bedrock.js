@@ -3,17 +3,18 @@ const { BedrockRuntimeClient, InvokeModelCommand } = require("@aws-sdk/client-be
 const client = new BedrockRuntimeClient({ region: "eu-central-1" });
 
 /**
- * Función interna de limpieza y validación de esquema
+ * Strict Data Normalization
+ * No default values here; only type parsing to ensure contract integrity.
  */
 function validarYLimpiarResultado(resultado) {
     const parseNumeric = (val) => {
         if (typeof val === 'number') return val;
         if (typeof val === 'string') {
-            // Elimina símbolos de moneda, espacios y convierte coma decimal a punto
             const clean = val.replace(/[^\d,.-]/g, '').replace(',', '.');
-            return parseFloat(clean);
+            const parsed = parseFloat(clean);
+            return isNaN(parsed) ? null : parsed;
         }
-        return 0;
+        return null;
     };
 
     if (resultado.extracted_data) {
@@ -22,43 +23,43 @@ function validarYLimpiarResultado(resultado) {
 
     if (resultado.ai_analysis) {
         resultado.ai_analysis.value = parseNumeric(resultado.ai_analysis.value);
-        resultado.ai_analysis.year = parseInt(resultado.ai_analysis.year) || new Date().getFullYear();
+        resultado.ai_analysis.year = parseInt(resultado.ai_analysis.year) || null;
     }
 
-    // Asegurar estructura mínima para evitar errores en cascada
-    const defaultStructure = {
-        extracted_data: { vendor: "UNKNOWN", total_amount: 0 },
-        ai_analysis: { service_type: "unknown", confidence_score: 0 },
-        climatiq_ready_payload: {}
-    };
+    // Critical: If any root section is missing, we fail to force prompt debugging
+    if (!resultado.extracted_data || !resultado.ai_analysis || !resultado.climatiq_ready_payload) {
+        throw new Error("Missing mandatory root JSON sections from Bedrock response.");
+    }
 
-    return { ...defaultStructure, ...resultado };
+    return resultado;
 }
 
 /**
- * Pipeline de Normalización con IA (Sistema de Gestión de Sostenibilidad)
+ * AI Normalization Pipeline (Sustainability Management System)
  */
 exports.entenderConIA = async (summary, queryHints) => {
     const modelId = "eu.anthropic.claude-haiku-4-5-20251001-v1:0";
 
-    const systemPrompt = `Eres un Ingeniero Senior de Datos de Sostenibilidad. 
-      Misión: Actuar como un middleware determinista entre el OCR bruto y la API de Climatiq.
-      
-      IMPORTANTE: Tu respuesta debe ser EXCLUSIVAMENTE un objeto JSON válido. 
-      No incluyas introducciones, explicaciones ni comentarios después del cierre del JSON.
+    const systemPrompt = `You are a Senior Sustainability Data Engineer. 
+      Mission: Act as a deterministic middleware between raw OCR data and the Climatiq API.
 
-      ### REFERENCIA DE MAPEO CLIMATIQ (ESTRICTO):
+      ### CORE OPERATIONAL RULES:
+      1. MANDATORY FIELDS: Every field in the JSON schema is REQUIRED. Do not omit any keys.
+      2. NO PROSE: Your output must be ONLY a valid JSON object. No explanations or extra text.
+      3. DATA MERGING: Prioritize QUERY_HINTS for header info (vendor, currency). Search SUMMARY/LINE_ITEMS for consumption values (kWh, m3, Liters).
+      4. REGION NORMALIZATION: Identify the country and return ONLY the ISO 3166-1 alpha-2 code (e.g., 'ES' for Spain, 'IL' for Israel).
+      5. PARAMETER MAPPING: 
+         - For 'elec' or 'gas' -> parameter_type MUST be 'energy'.
+         - For 'water' or 'fuel' -> parameter_type MUST be 'volume'.
+         - For money-based -> parameter_type MUST be 'money'.
+
+      ### CLIMATIQ MAPPING REFERENCE:
       - ELECTRICITY: 'electricity-supply_grid-source_production_mix'
       - WATER: 'water-type_tap_water'
       - NATURAL GAS: 'natural_gas-fuel_type_natural_gas'
       - DIESEL: 'fuel-type_diesel_fuel-source_generic'
 
-      ### REGLAS DE NEGOCIO:
-      1. FUSIÓN DE DATOS: Priorizar QUERY_HINTS para la cabecera. Busca en SUMMARY/LINE_ITEMS valores de consumo (kWh, m3, Litros).
-      2. LIMPIEZA: Extrae el valor numérico puro. Si dice "1123kWh", tu valor es 1123.
-      3. AÑO: Usa el año de 'billing_period' o 'invoice_date'.
-
-      ### DEFINICIÓN DEL ESQUEMA:
+      ### REQUIRED OUTPUT SCHEMA:
       {
         "extracted_data": {
           "vendor": "string",
@@ -73,20 +74,24 @@ exports.entenderConIA = async (summary, queryHints) => {
           "year": int,
           "calculation_method": "consumption_based|spend_based",
           "activity_id": "string",
+          "parameter_type": "energy|volume|money",
           "value": float,
-          "unit": "kWh|m3|l|money",
+          "unit": "string",
+          "region": "ISO_CODE",
           "confidence_score": float,
           "insight_text": "string"
         },
         "climatiq_ready_payload": {
           "activity_id": "string",
-          "parameters": { "energy_value": float, "energy_unit": "string" },
-          "year": int,
-          "region": "ES"
+          "region": "ISO_CODE",
+          "parameters": {
+            "[parameter_type]": float,
+            "[parameter_type]_unit": "string"
+          }
         }
       }`;
 
-    const userPrompt = `Analiza este documento:
+    const userPrompt = `Analyze this document for carbon accounting:
     QUERY_HINTS: ${JSON.stringify(queryHints)}
     FULL_SUMMARY: ${summary}`;
 
@@ -115,28 +120,26 @@ exports.entenderConIA = async (summary, queryHints) => {
         const contentText = parsedRes.content?.[0]?.text || "";
 
         console.log("=== [BEDROCK_DEBUG] ===");
-        console.log(`Latencia: ${duration}ms`);
+        console.log(`Latency: ${duration}ms`);
 
-        // --- EXTRACCIÓN SEGURA DE JSON ---
         const firstBracket = contentText.indexOf('{');
         const lastBracket = contentText.lastIndexOf('}');
         
         if (firstBracket === -1 || lastBracket === -1) {
-            console.error("Respuesta cruda fallida:", contentText);
-            throw new Error("La IA no devolvió un objeto JSON válido");
+            throw new Error("Bedrock did not return a valid JSON block.");
         }
 
         const jsonString = contentText.substring(firstBracket, lastBracket + 1);
         let finalResult = JSON.parse(jsonString);
 
-        // Limpieza y validación
+        // Final clean-up and contract validation
         finalResult = validarYLimpiarResultado(finalResult);
 
-        console.log("✅ Normalización exitosa para:", finalResult.extracted_data.vendor);
+        console.log("✅ AI Normalization successful for:", finalResult.extracted_data.vendor);
         return finalResult;
 
     } catch (error) {
-        console.error("🚨 [BEDROCK_ERROR]:", error.message);
-        throw new Error(`Fallo en la Normalización de IA: ${error.message}`);
+        console.error("🚨 [BEDROCK_PIPELINE_ERROR]:", error.message);
+        throw new Error(`AI Normalization Failed: ${error.message}`);
     }
 };
