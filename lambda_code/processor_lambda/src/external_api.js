@@ -1,32 +1,46 @@
 /**
  * Multi-model Climatiq API Wrapper - Strict Architecture Edition
- * Fix: Explicit data_version placement for Activity ID selectors.
+ * Final Fix: Case-sensitive Units (kWh, etc.) and dual data_version placement.
  */
 async function calculateInClimatiq(ai_analysis) {
     const apiKey = "2E44QNZJMX5X5B6EM43E88KRZ8"; 
     const baseUrl = "https://api.climatiq.io/data/v1";
     const DATA_VERSION = "32.32"; 
 
+    // CLIMATIQ UNIT STANDARDS (Case-sensitive)
     const unitMap = { 
-        "kilowatt-hour": "kwh", "kwh": "kwh", 
-        "liters": "l", "l": "l", "litros": "l", 
-        "m3": "m3", "cubic_meters": "m3",
-        "tons": "t", "t": "t", "toneladas": "t",
-        "eur": "eur", "usd": "usd", "ils": "ils"
+        "kilowatt-hour": "kWh", 
+        "kwh": "kWh", 
+        "wh": "Wh",
+        "mwh": "MWh",
+        "liters": "l", 
+        "l": "l", 
+        "litros": "l", 
+        "m3": "m3", 
+        "cubic_meters": "m3",
+        "tons": "t", 
+        "t": "t",
+        "eur": "eur", 
+        "usd": "usd", 
+        "ils": "ils"
     };
     
-    const normalizedUnit = unitMap[ai_analysis.unit?.toLowerCase()] || ai_analysis.unit?.toLowerCase();
+    // Normalización: buscamos en el mapa, si no existe devolvemos el original (as-is)
+    const normalizedUnit = unitMap[ai_analysis.unit?.toLowerCase()] || ai_analysis.unit;
     const serviceType = ai_analysis.service_type?.toLowerCase();
     
     let url = `${baseUrl}/estimate`;
     let finalPayload = {
-        data_version: DATA_VERSION // Root level
+        data_version: DATA_VERSION // Root Level requirement
     };
 
     if (serviceType === "freight") {
         url = `${baseUrl}/freight/v3/intermodal`;
         finalPayload.route = ai_analysis.route;
-        finalPayload.cargo = { weight: Number(ai_analysis.value), weight_unit: normalizedUnit };
+        finalPayload.cargo = { 
+            weight: Number(ai_analysis.value), 
+            weight_unit: normalizedUnit 
+        };
     } 
     else if (serviceType === "travel") {
         url = `${baseUrl}/travel/flights`;
@@ -34,7 +48,7 @@ async function calculateInClimatiq(ai_analysis) {
         finalPayload.passengers = ai_analysis.passengers;
     } 
     else {
-        // DEFAULT / EMISSION FACTOR FLOW
+        // FLOW: Electricity, Water, Gas, Fuel
         const numericValue = Number(ai_analysis.value);
         const parameters = {};
 
@@ -42,7 +56,7 @@ async function calculateInClimatiq(ai_analysis) {
             parameters.money = numericValue;
             parameters.money_unit = normalizedUnit;
         } else {
-            const paramKey = ai_analysis.parameter_type; 
+            const paramKey = ai_analysis.parameter_type; // e.g., 'energy' or 'volume'
             parameters[paramKey] = numericValue;
             parameters[`${paramKey}_unit`] = normalizedUnit;
         }
@@ -50,7 +64,7 @@ async function calculateInClimatiq(ai_analysis) {
         finalPayload.emission_factor = {
             activity_id: ai_analysis.activity_id,
             region: ai_analysis.region,
-            data_version: DATA_VERSION // Nested level (some endpoints require it here)
+            data_version: DATA_VERSION // Nested Level requirement for some activity selectors
         };
         finalPayload.parameters = parameters;
     }
@@ -60,8 +74,8 @@ async function calculateInClimatiq(ai_analysis) {
 
     try {
         console.log("=== [CLIMATIQ_API_REQUEST] ===");
-        console.log(`URL: ${url}`);
-        console.log("Final Payload:", JSON.stringify(finalPayload, null, 2));
+        console.log(`Endpoint: POST ${url}`);
+        console.log("Payload:", JSON.stringify(finalPayload, null, 2));
 
         const response = await fetch(url, {
             method: "POST",
@@ -78,8 +92,8 @@ async function calculateInClimatiq(ai_analysis) {
 
         if (!response.ok) {
             console.error("❌ [CLIMATIQ_API_REJECTED]");
-            console.error("Payload sent was:", JSON.stringify(finalPayload));
-            console.error("Response:", JSON.stringify(data, null, 2));
+            console.error("Debug Payload:", JSON.stringify(finalPayload));
+            console.error("Response JSON:", JSON.stringify(data, null, 2));
             throw new Error(`Climatiq Error: ${data.message || data.error_code}`);
         }
 
