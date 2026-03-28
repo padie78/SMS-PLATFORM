@@ -47,11 +47,11 @@ async function calculateInClimatiq(ai_analysis) {
     
     let url = `${baseUrl}/estimate`;
     let finalPayload = {
-        data_version: DATA_VERSION, // Nivel 1: Root
+        data_version: DATA_VERSION,
         emission_factor: {
             activity_id: finalActivityId,
             region: ai_analysis.region || "ES",
-            data_version: DATA_VERSION // Nivel 2: Nested (CRÍTICO para evitar el error actual)
+            data_version: DATA_VERSION 
         }
     };
 
@@ -65,7 +65,10 @@ async function calculateInClimatiq(ai_analysis) {
     const timeout = setTimeout(() => controller.abort(), 15000);
 
     try {
-        console.log(`=== [CLIMATIQ_STRICT_REQ] Method: ${calculationMethod} ===`);
+        // --- LOG DE ENVÍO INICIAL ---
+        console.log("🚀 [CLIMATIQ_REQUEST_START]");
+        console.log(`📌 Method: ${calculationMethod} | Service: ${serviceType}`);
+        console.log("📦 Payload Inicial:", JSON.stringify(finalPayload, null, 2));
         
         let response = await fetch(url, {
             method: "POST",
@@ -76,23 +79,26 @@ async function calculateInClimatiq(ai_analysis) {
 
         let data = await response.json();
 
-        // --- ESTRATEGIA DE FALLBACK (REINTENTO GLOBAL) ---
+        // --- ESTRATEGIA DE FALLBACK ---
         if (!response.ok && (data.error_code === "no_emission_factor_found" || data.message.includes("unit type") || data.error_code === "resource_not_found")) {
-            console.warn("⚠️ [FALLBACK]: Reintentando con factor genérico IEA...");
+            console.warn("⚠️ [CLIMATIQ_ERROR]:", data.message || data.error_code);
+            console.warn("🔄 [RETRYING]: Ejecutando Fallback con factor genérico IEA...");
             
             const fallbackPayload = {
-                data_version: DATA_VERSION, // Root
+                data_version: DATA_VERSION,
                 emission_factor: {
                     activity_id: "electricity-supply_grid-source_production_mix",
                     region: ai_analysis.region || "ES",
                     source: "IEA",
-                    data_version: DATA_VERSION // Nested
+                    data_version: DATA_VERSION 
                 },
                 parameters: {
                     energy: calculationMethod === 'spend_based' ? Math.round(numericValue / 0.15) : numericValue,
                     energy_unit: "kWh"
                 }
             };
+
+            console.log("📦 Payload Fallback:", JSON.stringify(fallbackPayload, null, 2));
 
             response = await fetch(url, {
                 method: "POST",
@@ -102,7 +108,12 @@ async function calculateInClimatiq(ai_analysis) {
             data = await response.json();
         }
 
-        if (!response.ok) throw new Error(`Climatiq Error: ${data.message || data.error_code}`);
+        if (!response.ok) {
+            console.error("❌ [CLIMATIQ_FATAL_ERROR]:", JSON.stringify(data, null, 2));
+            throw new Error(`Climatiq Error: ${data.message || data.error_code}`);
+        }
+
+        console.log("✅ [CLIMATIQ_SUCCESS]:", data.co2e, data.co2e_unit);
 
         return {
             calculation_id: data.calculation_id,
@@ -114,6 +125,7 @@ async function calculateInClimatiq(ai_analysis) {
         };
 
     } catch (error) {
+        console.error("🔥 [API_WRAPPER_CRASH]:", error.message);
         if (timeout) clearTimeout(timeout);
         throw error; 
     }
