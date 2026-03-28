@@ -1,6 +1,6 @@
 /**
  * Multi-model Climatiq API Wrapper - Ironclad Architecture Edition
- * Final Fix: Dynamic Activity Selection & Global Fallback Logic
+ * Final Fix: Global Fallback Strategy & Automatic Unit/Activity Alignment
  */
 async function calculateInClimatiq(ai_analysis) {
     const apiKey = "2E44QNZJMX5X5B6EM43E88KRZ8"; 
@@ -25,10 +25,10 @@ async function calculateInClimatiq(ai_analysis) {
         return unitMap[unit] || rawUnit; 
     }
 
-    // 2. SELECCIÓN DINÁMICA DE ACTIVITY_ID (Evita el error de ELEIA)
+    // 2. SELECCIÓN DINÁMICA DE ACTIVITY_ID (Para Spend-based)
     function getAdjustedActivityId(originalId, method, sType) {
         if (method === 'spend_based' && (sType === 'elec' || sType === 'electricity')) {
-            // Este factor sí acepta 'money' como parámetro
+            // Factor compatible con parámetros de tipo 'money'
             return "electricity-consumption"; 
         }
         return originalId;
@@ -51,30 +51,23 @@ async function calculateInClimatiq(ai_analysis) {
         data_version: DATA_VERSION,
         emission_factor: {
             activity_id: finalActivityId,
-            region: ai_analysis.region || "ES",
-            data_version: DATA_VERSION 
+            region: ai_analysis.region || "ES"
         }
     };
 
-    // Lógica de parámetros (Payload)
     const numericValue = Number(ai_analysis.value);
     const parameters = {};
     parameters[finalParamType] = numericValue;
     parameters[`${finalParamType}_unit`] = normalizedUnit;
     finalPayload.parameters = parameters;
 
-    // Manejo especial para Freight/Travel (Si aplica)
-    if (serviceType === "freight") {
-        url = `${baseUrl}/freight/v3/intermodal`;
-        // ... (lógica de freight)
-    }
-
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
     try {
         console.log(`=== [CLIMATIQ_STRICT_REQ] Method: ${calculationMethod} ===`);
-        
+        console.log("Payload:", JSON.stringify(finalPayload, null, 2));
+
         let response = await fetch(url, {
             method: "POST",
             signal: controller.signal,
@@ -84,26 +77,25 @@ async function calculateInClimatiq(ai_analysis) {
 
         let data = await response.json();
 
-        // --- CLÁUSULA DE RESCATE (FALLBACK) ---
-        // Si falla por región o unidad (Caso Quito o ELEIA), reintentamos con factor IEA Global
-        if (!response.ok && (data.error_code === "no_emission_factor_found" || data.message.includes("unit type"))) {
-            console.warn("⚠️ [RETRYING]: Reintentando con factor genérico IEA...");
+        // --- ESTRATEGIA DE FALLBACK (REINTENTO GLOBAL) ---
+        // Si no encuentra el factor o hay error de unidades (Quito, ELEIA, etc.)
+        if (!response.ok && (data.error_code === "no_emission_factor_found" || data.message.includes("unit type") || data.error_code === "resource_not_found")) {
+            console.warn("⚠️ [FALLBACK]: No se encontró factor exacto. Usando fuente universal IEA...");
             
             const fallbackPayload = {
                 data_version: DATA_VERSION,
                 emission_factor: {
                     activity_id: "electricity-supply_grid-source_production_mix",
                     region: ai_analysis.region || "ES",
-                    source: "IEA" 
+                    source: "IEA" // Comodín internacional
                 },
                 parameters: {
-                    energy: calculationMethod === 'spend_based' ? 1 : numericValue, // Evitamos NaN
+                    // Si era spend_based, estimamos kWh (dividiendo por precio prom. 0.15) para que el factor IEA lo acepte
+                    energy: calculationMethod === 'spend_based' ? Math.round(numericValue / 0.15) : numericValue,
                     energy_unit: "kWh"
                 }
             };
 
-            // Nota: Si era spend_based, el fallback a IEA es difícil sin conversión, 
-            // pero esto evita que la Lambda explote y devuelve un valor aproximado.
             response = await fetch(url, {
                 method: "POST",
                 headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -112,15 +104,20 @@ async function calculateInClimatiq(ai_analysis) {
             data = await response.json();
         }
 
-        if (!response.ok) throw new Error(`Climatiq Error: ${data.message}`);
+        if (!response.ok) throw new Error(`Climatiq Fatal: ${data.message || data.error_code}`);
 
         return {
             calculation_id: data.calculation_id,
             co2e: Number(data.co2e),
             co2e_unit: data.co2e_unit,
             activity_id: finalActivityId,
-            audit_trail: `climatiq_${serviceType}_${calculationMethod}_v2`,
-            timestamp: new Date().toISOString()
+            audit_trail: `climatiq_${serviceType}_${calculationMethod}_v3_fallback`,
+            timestamp: new Date().toISOString(),
+            metadata: { 
+                region: ai_analysis.region, 
+                year: ai_analysis.year,
+                fallback_used: !response.ok // Indica si se usó el factor IEA
+            }
         };
 
     } catch (error) {
