@@ -6,10 +6,6 @@ const {
 
 const textractClient = new TextractClient({ region: process.env.AWS_REGION || "eu-central-1" });
 
-/**
- * Servicio de extracción de facturas mediante AWS Textract (Asíncrono)
- * Optimizado para Expense Analysis con logging de trazabilidad.
- */
 exports.extraerFactura = async (bucket, key) => {
     const startTime = Date.now();
     console.log(`=== [TEXTRACT_JOB_START] ===`);
@@ -29,60 +25,70 @@ exports.extraerFactura = async (bucket, key) => {
         let response;
         let attempts = 0;
 
-        // --- POLLING LOOP ---
         while (!finished && attempts < 30) { 
             attempts++;
-            // Espera de 2 segundos entre intentos
             await new Promise(r => setTimeout(r, 2000));
-
             const getCommand = new GetExpenseAnalysisCommand({ JobId: jobId });
             response = await textractClient.send(getCommand);
-
             console.log(`[TEXTRACT_POLLING] Intento ${attempts} | Estado: ${response.JobStatus}`);
-
-            if (response.JobStatus === "SUCCEEDED") {
-                finished = true;
-            } else if (response.JobStatus === "FAILED") {
-                throw new Error(`AWS Textract Job Failed: ${response.StatusMessage || "Unknown reason"}`);
-            }
+            if (response.JobStatus === "SUCCEEDED") finished = true;
+            else if (response.JobStatus === "FAILED") throw new Error(`AWS Textract Job Failed: ${response.StatusMessage}`);
         }
 
-        if (!finished) throw new Error(`Timeout tras ${attempts} intentos (aprox. 60s).`);
+        if (!finished) throw new Error(`Timeout tras ${attempts} intentos.`);
 
         const processTime = Date.now() - startTime;
         console.log(`=== [TEXTRACT_RESPONSE_RECEIVED] ===`);
-        console.log(`Tiempo total de procesamiento: ${processTime}ms`);
 
-        // 1. Extracción de texto completo (LINE) para el Summary de Bedrock
-        // Textract Expense puede devolver bloques en 'Blocks' o dentro de 'ExpenseDocuments'
-        const fullText = (response.Blocks || [])
+        // --- 1. EXTRACCIÓN DE TEXTO BASE (LINEs) ---
+        let fullText = (response.Blocks || [])
             .filter(b => b.BlockType === "LINE")
             .map(b => b.Text)
             .join(" ");
 
-        // 2. Extracción de campos clave (Hints) detectados por el modelo de IA de Textract
-        const rawHints = {};
+        // --- 2. EXTRACCIÓN DE LÍNEAS DE DETALLE (Consumos/kWh) ---
+        const detailedLines = [];
         const expenseDoc = response.ExpenseDocuments?.[0];
-        
-        if (expenseDoc?.SummaryFields) {
-            expenseDoc.SummaryFields.forEach(f => {
-                const type = f.Type?.Text || "UNKNOWN";
-                const value = f.ValueDetection?.Text || "N/A";
-                rawHints[type] = value;
-            });
-            
-            console.log("Campos financieros detectados (Hints):", JSON.stringify(rawHints, null, 2));
+        const rawHints = {};
+
+        if (expenseDoc) {
+            // Procesamos campos de cabecera (Hints)
+            if (expenseDoc.SummaryFields) {
+                expenseDoc.SummaryFields.forEach(f => {
+                    rawHints[f.Type?.Text || "UNKNOWN"] = f.ValueDetection?.Text || "N/A";
+                });
+            }
+
+            // PROCESAMIENTO CRÍTICO: Recorremos las tablas para sacar los consumos
+            if (expenseDoc.LineItemGroups) {
+                console.log(`[TEXTRACT_DEBUG] Procesando ${expenseDoc.LineItemGroups.length} grupos de líneas...`);
+                expenseDoc.LineItemGroups.forEach(group => {
+                    group.LineItems?.forEach(item => {
+                        const lineContent = item.LineItemExpenseFields
+                            ?.map(f => `${f.Type?.Text || 'FIELD'}: ${f.ValueDetection?.Text}`)
+                            .join(" | ");
+                        if (lineContent) detailedLines.push(`[DETALLE_CONSUMO]: ${lineContent}`);
+                    });
+                });
+            }
         }
 
+        // --- 3. CONSOLIDACIÓN DEL SUMMARY PARA BEDROCK ---
+        // Aquí es donde Bedrock encontrará los kWh si no estaban en el texto plano
+        const summaryForAI = `
+        DOCUMENT_TEXT: ${fullText}
+        TABLE_DATA: ${detailedLines.join("\n")}
+        `.trim();
+
         const result = {
-            summary: fullText.trim(),
+            summary: summaryForAI,
             query_hints: {
                 VENDOR: rawHints.VENDOR_NAME || rawHints.NAME || "UNKNOWN",
-                TOTAL_AMOUNT: rawHints.TOTAL || rawHints.AMOUNT_DUE,
+                TOTAL_AMOUNT: rawHints.TOTAL || rawHints.AMOUNT_DUE || "0",
                 CURRENCY: rawHints.CURRENCY || "ILS",
-                INVOICE_DATE: rawHints.INVOICE_RECEIPT_DATE || rawHints.DATE,
-                ACCOUNT_ID: rawHints.ACCOUNT_NUMBER || rawHints.CUSTOMER_NUMBER,
-                RAW: rawHints // Mantenemos el objeto original para debug
+                INVOICE_DATE: rawHints.INVOICE_RECEIPT_DATE || rawHints.DATE || null,
+                ACCOUNT_ID: rawHints.ACCOUNT_NUMBER || rawHints.CUSTOMER_NUMBER || "N/A",
+                RAW: rawHints 
             },
             metadata: { 
                 pages: response.DocumentMetadata?.Pages, 
@@ -91,17 +97,13 @@ exports.extraerFactura = async (bucket, key) => {
             }
         };
 
-        console.log(`✅ [TEXTRACT_SUCCESS] Páginas: ${result.metadata.pages} | Texto extraído: ${result.summary.length} caracteres.`);
+        console.log(`✅ [TEXTRACT_SUCCESS] Páginas: ${result.metadata.pages} | Caracteres Summary: ${result.summary.length}`);
         console.log(`=== [TEXTRACT_JOB_END] ===`);
 
         return result;
 
     } catch (error) {
-        console.error(`🚨 [TEXTRACT_FATAL_ERROR]`);
-        console.error(`Mensaje: ${error.message}`);
-        if (error.name === 'UnsupportedDocumentFormat') {
-            console.error("Detalle: El formato del archivo en S3 no es compatible con Textract.");
-        }
+        console.error(`🚨 [TEXTRACT_FATAL_ERROR]`, error.message);
         throw error;
     }
 };
