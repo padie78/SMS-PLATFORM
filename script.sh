@@ -9,7 +9,7 @@ USER_POOL_ID="eu-central-1_LJE1bkULW"
 API_BASE_URL="https://15bj1vq521.execute-api.eu-central-1.amazonaws.com"
 API_PATH="/get-url"
 
-TEST_FILE="./factura-marzo.pdf"
+TEST_FILE="./factura.jpg"
 
 # Datos del Usuario
 USERNAME="diego_liascovich"
@@ -40,7 +40,7 @@ echo "📡 Solicitando URL firmada..."
 RESPONSE=$(curl -s -X POST "${API_BASE_URL}${API_PATH}" \
     -H "Authorization: Bearer $ID_TOKEN" \
     -H "Content-Type: application/json" \
-    -d "{ \"fileName\": \"factura-marzo.pdf\", \"fileType\": \"application/pdf\" }")
+    -d "{ \"fileName\": \"factura.jpg\", \"fileType\": \"application/jpg\" }")
 
 UPLOAD_URL=$(echo $RESPONSE | jq -r '.uploadURL // empty')
 # Capturamos el userId que devuelve tu Lambda para informar en consola
@@ -57,11 +57,11 @@ echo "✅ URL recibida para el Cliente: $USER_ID"
 echo "📤 Subiendo archivo a S3..."
 UPLOAD_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "$UPLOAD_URL" \
     --upload-file "$TEST_FILE" \
-    -H "Content-Type: application/pdf")
+    -H "Content-Type: application/jpg")
 
 if [ "$UPLOAD_STATUS" == "200" ]; then
     echo "🎉 ¡ÉXITO! Archivo guardado en S3."
-    echo "📍 Ruta: uploads/$USER_ID/factura-marzo.pdf"
+    echo "📍 Ruta: uploads/$USER_ID/factura.jpg"
 else
     echo "❌ Error en S3. Status: $UPLOAD_STATUS"
 fi

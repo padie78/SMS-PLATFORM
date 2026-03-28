@@ -1,7 +1,7 @@
 const { GetObjectCommand } = require("@aws-sdk/client-s3");
 
 /**
- * Limpia el ruido típico de OCR de Textract
+ * Limpia espacios y saltos de línea para un Summary limpio en Bedrock
  */
 function limpiarTexto(texto) {
     if (!texto) return "";
@@ -9,55 +9,61 @@ function limpiarTexto(texto) {
 }
 
 /**
- * Validación básica para asegurar que Climatiq tenga lo mínimo necesario
+ * Validación robusta para Climatiq
  */
 function validarCampos(datos) {
-    return !!(datos && datos.consumption_value && datos.consumption_unit && datos.service_type);
+    // Verificamos que existan los 3 pilares del cálculo
+    return !!(
+        datos && 
+        (datos.value || datos.consumption_value) && 
+        (datos.unit || datos.consumption_unit) && 
+        datos.activity_id
+    );
 }
 
 /**
- * Helper para descargar desde S3. 
- * Se inyecta el s3Client desde el index.js para evitar errores de scope.
+ * Helper optimizado para Node.js 18+ (AWS SDK v3)
  */
 async function downloadFromS3(s3Client, bucket, key) {
-    const response = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-    const chunks = [];
-    for await (const chunk of response.Body) {
-        chunks.push(chunk);
+    try {
+        const response = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+        const byteArray = await response.Body.transformToByteArray();
+        return Buffer.from(byteArray);
+    } catch (error) {
+        console.error(`🚨 [S3_DOWNLOAD_ERROR] Key: ${key}`, error);
+        throw error;
     }
-    return Buffer.concat(chunks);
 }
 
 /**
- * Transforma todas las piezas (IA, OCR, Climatiq) en un registro único y coherente.
+ * Construye el objeto final para DynamoDB (Single Table Design)
  */
 function buildGoldenRecord(orgId, fileId, key, filename, fileHash, ai, climatiq) {
     const now = new Date().toISOString();
     const [datePart] = now.split('T');
     
-    // Extraemos año y mes para las estadísticas
     const year = datePart.split('-')[0];
     const month = datePart.split('-')[1];
 
-    // Sanitización de valores numéricos para DynamoDB
-    const co2e = Number(climatiq.co2e) || 0;
+    // Normalización forzada de valores numéricos
+    const co2e = Number(climatiq?.co2e) || 0;
     const amount = Number(ai.extracted_data?.total_amount) || 0;
     const serviceType = ai.ai_analysis?.service_type || "Unknown";
+    const confidence = Number(ai.ai_analysis?.confidence_score) || 0;
 
     return {
-        // Referencias para la lógica de TransactWrite en db.js
         internal_refs: {
             orgId,
             year,
             month,
             co2e,
             totalAmount: amount,
-            serviceType: serviceType
+            serviceType
         },
-        // El registro completo de auditoría (INV#...)
         full_record: {
             PK: `ORG#${orgId}`,
-            SK: `INV#${datePart}#${fileId}`,
+            // Usamos el fileHash en el SK para evitar colisiones si se procesa el mismo día
+            SK: `INV#${datePart}#${fileHash.substring(0, 8)}`, 
             metadata: { 
                 filename, 
                 s3_key: key, 
@@ -69,12 +75,12 @@ function buildGoldenRecord(orgId, fileId, key, filename, fileHash, ai, climatiq)
             extracted_data: { 
                 ...ai.extracted_data, 
                 total_amount: amount,
-                currency: ai.extracted_data?.currency || "USD"
+                currency: ai.extracted_data?.currency || "EUR" // Iberdrola default
             },
             ai_analysis: { 
                 ...ai.ai_analysis, 
-                confidence_score: Number(ai.ai_analysis?.confidence_score) || 0,
-                requires_review: (ai.ai_analysis?.confidence_score || 0) < 0.85
+                confidence_score: confidence,
+                requires_review: confidence < 0.80 // Umbral de negocio
             },
             climatiq_result: { 
                 ...climatiq, 
@@ -85,8 +91,9 @@ function buildGoldenRecord(orgId, fileId, key, filename, fileHash, ai, climatiq)
             analytics_dimensions: {
                 period_year: parseInt(year),
                 period_month: parseInt(month),
-                carbon_intensity: amount > 0 ? parseFloat((co2e / amount).toFixed(5)) : 0,
-                sector: "CONSTRUCTION" // Podría venir dinámico desde la Org
+                // Evitamos división por cero y redondeamos
+                carbon_intensity: amount > 0 ? Number((co2e / amount).toFixed(5)) : 0,
+                sector: "CONSTRUCTION"
             }
         }
     };

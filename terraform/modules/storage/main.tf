@@ -72,7 +72,6 @@ resource "aws_s3_bucket_notification" "processor_trigger" {
     
     # Si el ID del cliente va al principio, dejamos el prefijo vacío 
     # o lo cambiamos para que busque en cualquier carpeta pero solo PDFs
-    filter_suffix       = ".pdf" 
   }
   depends_on = [aws_lambda_permission.s3_invoke_processor]
 }
