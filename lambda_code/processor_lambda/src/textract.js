@@ -40,44 +40,51 @@ exports.extraerFactura = async (bucket, key) => {
         const processTime = Date.now() - startTime;
         console.log(`=== [TEXTRACT_RESPONSE_RECEIVED] ===`);
 
-        // --- 1. EXTRACCIÓN DE TEXTO BASE (LINEs) ---
+        // --- 1. EXTRACCIÓN DE TEXTO COMPLETO (Estrategia Híbrida) ---
+        // Primero intentamos bloques directos (OCR puro)
         let fullText = (response.Blocks || [])
             .filter(b => b.BlockType === "LINE")
             .map(b => b.Text)
-            .join(" ");
+            .join(" | ");
 
-        // --- 2. EXTRACCIÓN DE LÍNEAS DE DETALLE (Consumos/kWh) ---
         const detailedLines = [];
-        const expenseDoc = response.ExpenseDocuments?.[0];
         const rawHints = {};
+        const expenseDoc = response.ExpenseDocuments?.[0];
 
         if (expenseDoc) {
-            // Procesamos campos de cabecera (Hints)
+            // Extraer Hints financieros
             if (expenseDoc.SummaryFields) {
                 expenseDoc.SummaryFields.forEach(f => {
                     rawHints[f.Type?.Text || "UNKNOWN"] = f.ValueDetection?.Text || "N/A";
                 });
             }
 
-            // PROCESAMIENTO CRÍTICO: Recorremos las tablas para sacar los consumos
+            // PROCESAMIENTO DE TABLAS (Donde están los consumos: kWh, m3, etc.)
             if (expenseDoc.LineItemGroups) {
-                console.log(`[TEXTRACT_DEBUG] Procesando ${expenseDoc.LineItemGroups.length} grupos de líneas...`);
                 expenseDoc.LineItemGroups.forEach(group => {
                     group.LineItems?.forEach(item => {
-                        const lineContent = item.LineItemExpenseFields
-                            ?.map(f => `${f.Type?.Text || 'FIELD'}: ${f.ValueDetection?.Text}`)
+                        const line = item.LineItemExpenseFields
+                            ?.map(f => `${f.Type?.Text || 'DESC'}: ${f.ValueDetection?.Text}`)
                             .join(" | ");
-                        if (lineContent) detailedLines.push(`[DETALLE_CONSUMO]: ${lineContent}`);
+                        if (line) detailedLines.push(`[DETALLE_CONSUMO]: ${line}`);
                     });
                 });
             }
+
+            // SAFETY NET: Si fullText vino vacío (común en ExpenseAnalysis), reconstruimos 
+            // el texto completo a partir de los campos detectados por el modelo de IA.
+            if (!fullText) {
+                console.log("[TEXTRACT_DEBUG] Reconstruyendo texto desde ExpenseDocuments...");
+                const backupText = [];
+                expenseDoc.SummaryFields?.forEach(f => backupText.push(f.LabelDetection?.Text, f.ValueDetection?.Text));
+                fullText = backupText.filter(Boolean).join(" ");
+            }
         }
 
-        // --- 3. CONSOLIDACIÓN DEL SUMMARY PARA BEDROCK ---
-        // Aquí es donde Bedrock encontrará los kWh si no estaban en el texto plano
+        // --- 2. CONSOLIDACIÓN PARA BEDROCK ---
         const summaryForAI = `
-        DOCUMENT_TEXT: ${fullText}
-        TABLE_DATA: ${detailedLines.join("\n")}
+        DOCUMENT_RAW_TEXT: ${fullText}
+        STRUCTURED_LINE_ITEMS: ${detailedLines.join("\n")}
         `.trim();
 
         const result = {
@@ -91,12 +98,13 @@ exports.extraerFactura = async (bucket, key) => {
                 RAW: rawHints 
             },
             metadata: { 
-                pages: response.DocumentMetadata?.Pages, 
+                pages: response.DocumentMetadata?.Pages || 1, 
                 jobId: jobId,
                 latency_ms: processTime
             }
         };
 
+        // El log crítico para debuguear el summaryLength
         console.log(`✅ [TEXTRACT_SUCCESS] Páginas: ${result.metadata.pages} | Caracteres Summary: ${result.summary.length}`);
         console.log(`=== [TEXTRACT_JOB_END] ===`);
 
