@@ -11,11 +11,16 @@ exports.saveInvoiceWithStats = async (item) => {
     const tableName = process.env.DYNAMO_TABLE;
 
     try {
-        // PASO 1: Guardar Factura e inicializar totales anuales (Esto ya funciona)
+        // PASO 1: Guardar Factura con CONDICIÓN de no existencia
+        // Si el SK (hash) ya existe, cancela toda la transacción y no suma al STATS global.
         await dynamo.send(new TransactWriteCommand({
             TransactItems: [
                 {
-                    Put: { TableName: tableName, Item: item.full_record }
+                    Put: { 
+                        TableName: tableName, 
+                        Item: item.full_record,
+                        ConditionExpression: "attribute_not_exists(SK)" // Evita duplicados
+                    }
                 },
                 {
                     Update: {
@@ -36,8 +41,7 @@ exports.saveInvoiceWithStats = async (item) => {
             ]
         }));
 
-        // PASO 2: Actualizar el detalle mensual y por servicio (Sin overlap)
-        // Usamos una lógica de SET incremental para evitar el conflicto de ADD/SET
+        // PASO 2: Asegurar nodos del mes y servicio (Solo se ejecuta si el Paso 1 fue exitoso)
         await dynamo.send(new TransactWriteCommand({
             TransactItems: [{
                 Update: {
@@ -56,7 +60,7 @@ exports.saveInvoiceWithStats = async (item) => {
             }]
         }));
 
-        // PASO 3: Ahora sí, sumamos los valores a los nodos garantizados
+        // PASO 3: Sumar valores anidados
         await dynamo.send(new TransactWriteCommand({
             TransactItems: [{
                 Update: {
@@ -73,10 +77,16 @@ exports.saveInvoiceWithStats = async (item) => {
             }]
         }));
 
-        console.log(`✅ [SMS_PIPELINE_COMPLETE] Factura procesada y estadísticas actualizadas.`);
+        console.log(`✅ [SMS_PIPELINE_COMPLETE] Factura nueva procesada.`);
         return { success: true };
 
     } catch (error) {
+        // Manejo específico para facturas duplicadas
+        if (error.name === "TransactionCanceledException" || error.message.includes("ConditionalCheckFailed")) {
+            console.warn(`⏭️ [SKIP]: Factura ${item.full_record.SK} ya existe. No se duplicaron estadísticas.`);
+            return { success: false, reason: "ALREADY_EXISTS" };
+        }
+
         console.error("🚨 [DYNAMO_CRITICAL_FAILURE]:", error.message);
         throw error;
     }
