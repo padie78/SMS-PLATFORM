@@ -135,7 +135,10 @@ exports.entenderConIA = async (summary, queryHints) => {
         // Final clean-up and contract validation
         finalResult = validarYLimpiarResultado(finalResult);
 
+        console.log("--- [BEDROCK_NORMALIZED_RESULT] ---");
+        console.log(JSON.stringify(finalResult, null, 2));
         console.log("✅ AI Normalization successful for:", finalResult.extracted_data.vendor);
+        console.log("-----------------------------------");
         return finalResult;
 
     } catch (error) {
