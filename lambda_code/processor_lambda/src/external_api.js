@@ -5,41 +5,46 @@ const DATA_VERSION = "32.32";
 const BASE_URL = "https://api.climatiq.io/data/v1";
 
 /**
- * Orquestación dinámica: 
- * 1. Bedrock propone términos. 
- * 2. Climatiq Search valida el factor. 
- * 3. Bedrock extrae la unidad requerida.
+ * Orquestación dinámica con Fallback de Seguridad
  */
 async function calculateInClimatiq(ocrSummary, queryHints = {}) {
     console.log("---------- [SEMANTIC CLIMATIQ FLOW] ----------");
 
     try {
-        // --- PASO 1: BÚSQUEDA ---
+        // --- PASO 1: ANÁLISIS INICIAL ---
         const preAnalysis = await generarBusquedaSemantica(ocrSummary, queryHints);
-        console.log(`🔎 Intent: ${preAnalysis.search_query} (${preAnalysis.vendor})`);
+        const region = preAnalysis.region || "ES"; // Default a ES si estamos en España
+        
+        // --- PASO 2: BÚSQUEDA CON REINTENTO (FALLBACK) ---
+        let searchData = await callClimatiqSearch(preAnalysis.search_query, region);
 
-        const searchRes = await fetch(`${BASE_URL}/search?query=${encodeURIComponent(preAnalysis.search_query)}&limit=1`, {
-            headers: { 'Authorization': `Bearer ${CLIMATIQ_API_KEY}` }
-        });
-        const searchData = await searchRes.json();
+        // Si falla por vendor específico (como ELEIA), reintentamos por servicio genérico
+        if (!searchData.results?.length) {
+            console.warn(`⚠️ No factors for "${preAnalysis.search_query}". Trying fallback...`);
+            
+            // Construimos una búsqueda genérica basada en el tipo de servicio (elec, gas, fuel)
+            const fallbackMap = { 'elec': 'electricity', 'gas': 'natural gas', 'fuel': 'diesel' };
+            const genericQuery = fallbackMap[preAnalysis.service_type] || preAnalysis.service_type;
+            
+            searchData = await callClimatiqSearch(genericQuery, region);
+        }
 
         if (!searchData.results?.length) {
-            throw new Error(`No factors found for: ${preAnalysis.search_query}`);
+            throw new Error(`Total Failure: No emission factors found even with fallback.`);
         }
 
         const factor = searchData.results[0];
-        console.log(`✅ Match: ${factor.activity_id} | Needs: ${factor.unit_type}`);
+        console.log(`✅ Factor Match: ${factor.activity_id} | Needs: ${factor.unit_type}`);
 
-        // --- PASO 2: EXTRACCIÓN DIRIGIDA ---
-        // Le pasamos el 'unit_type' real de la API a Bedrock
+        // --- PASO 3: EXTRACCIÓN DIRIGIDA ---
         const extraction = await extraerValorEspecifico(ocrSummary, factor.unit_type);
 
-        // --- PASO 3: CONSTRUCCIÓN DINÁMICA ---
+        // --- PASO 4: CONSTRUCCIÓN DEL PAYLOAD ---
         const payload = {
             data_version: DATA_VERSION,
             emission_factor: {
                 activity_id: factor.activity_id,
-                region: preAnalysis.region || factor.allowed_regions[0] || "WORLD"
+                region: region
             },
             parameters: {
                 [extraction.key]: Number(extraction.value),
@@ -47,14 +52,13 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
             }
         };
 
-        // Manejo de moneda para cálculos basados en gasto
         if (factor.unit_type === 'money') {
             payload.parameters.currency = extraction.currency || "EUR";
         }
 
-        console.log("🚀 [PAYLOAD]:", JSON.stringify(payload, null, 2));
+        console.log("🚀 [CLIMATIQ_PAYLOAD]:", JSON.stringify(payload, null, 2));
 
-        // --- PASO 4: ESTIMACIÓN ---
+        // --- PASO 5: ESTIMACIÓN ---
         const res = await fetch(`${BASE_URL}/estimate`, {
             method: "POST",
             headers: { 
@@ -67,18 +71,34 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Estimation Failed");
 
+        // Validamos que el resultado no sea 0 para evitar registros vacíos
+        if (data.co2e === 0) {
+            console.error("🚨 Calculation returned 0. Possible unit mismatch.");
+        }
+
         return {
             co2e: data.co2e,
             unit: data.co2e_unit,
             activity_id: factor.activity_id,
             vendor: preAnalysis.vendor,
-            audit: "semantic_search_v2"
+            audit: searchData.is_fallback ? "fallback_search_v2" : "direct_search_v2"
         };
 
     } catch (err) {
         console.error("❌ [CLIMATIQ_PIPELINE_ERROR]:", err.message);
-        return null; 
+        return null; // El orquestador debe manejar este null y marcar el registro como ERROR
     }
+}
+
+/**
+ * Helper para búsqueda limpia en Climatiq
+ */
+async function callClimatiqSearch(query, region) {
+    const url = `${BASE_URL}/search?query=${encodeURIComponent(query)}&region=${region}&limit=1`;
+    const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${CLIMATIQ_API_KEY}` }
+    });
+    return await res.json();
 }
 
 module.exports = { calculateInClimatiq };

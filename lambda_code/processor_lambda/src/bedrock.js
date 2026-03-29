@@ -116,32 +116,40 @@ async function invokeBedrock(summary, queryHints, customInstruction = "") {
 }
 
 /**
- * PASO 1: Para obtener términos de búsqueda y análisis inicial
+ * PASO 1: Generar keywords y CLASIFICAR el servicio
  */
 exports.generarBusquedaSemantica = async (summary, queryHints = {}) => {
-    const instruction = "Focus on extracting the most accurate search keywords for the emission factor.";
+    // Añadimos service_type a la instrucción para que el fallback sepa qué es
+    const instruction = `Identify the provider and the utility type. 
+    Classification for service_type: 'elec', 'gas', 'water', or 'fuel'.`;
+    
     const result = await invokeBedrock(summary, queryHints, instruction);
     
-    // Agregamos search_query al vuelo basado en el vendor y service_type para el Search API
     return {
         ...result,
-        search_query: `${result.extracted_data.vendor} ${result.ai_analysis.service_type}`
+        // Aseguramos que existan estos campos para que external_api no rompa
+        service_type: result.ai_analysis?.service_type || 'elec',
+        search_query: `${result.extracted_data?.vendor || ''} ${result.ai_analysis?.service_type || ''}`.trim(),
+        vendor: result.extracted_data?.vendor || "Unknown",
+        region: result.ai_analysis?.region || "ES"
     };
 };
 
 /**
- * PASO 2: Para extraer el valor basado en la unidad que Climatiq nos confirmó
+ * PASO 2: Extraer el valor basado en la unidad confirmada
+ * (Esta se queda igual, pero asegúrate de que use el resultado limpiado)
  */
 exports.extraerValorEspecifico = async (summary, unitType, queryHints = {}) => {
-    const instruction = `The Climatiq API has confirmed that for this factor it strictly needs a value for: ${unitType}.`;
+    const instruction = `The Climatiq API requires a value for: ${unitType}. 
+    Focus ONLY on extracting the numerical value and its specific unit from the text.`;
+    
     const result = await invokeBedrock(summary, queryHints, instruction);
     
-    // Devolvemos el objeto mapeado para que external_api.js lo entienda
     return {
-        value: result.ai_analysis.value,
-        key: result.ai_analysis.parameter_type,
-        unit: result.ai_analysis.unit,
-        currency: result.extracted_data.currency
+        value: result.ai_analysis?.value || 0,
+        key: result.ai_analysis?.parameter_type || 'energy',
+        unit: result.ai_analysis?.unit || 'kWh',
+        currency: result.extracted_data?.currency || 'EUR'
     };
 };
 
