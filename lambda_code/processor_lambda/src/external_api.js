@@ -1,99 +1,84 @@
-/**
- * Climatiq Wrapper - SMS Project
- * Asegúrate de que este archivo termine con module.exports
- */
-async function calculateInClimatiq(ai_analysis) {
-    // 1. LOG DE ENTRADA ABSOLUTA
-    console.log("---------- [DEBUG SMS START] ----------");
-    console.log("Recibido ai_analysis:", JSON.stringify(ai_analysis, null, 2));
+const { generarBusquedaSemantica, extraerValorEspecifico } = require("./bedrock");
 
-    const apiKey = "2E44QNZJMX5X5B6EM43E88KRZ8"; 
-    const baseUrl = "https://api.climatiq.io/data/v1/estimate";
-    const DATA_VERSION = "32.32"; 
+const CLIMATIQ_API_KEY = "2E44QNZJMX5X5B6EM43E88KRZ8"; 
+const DATA_VERSION = "32.32";
+const BASE_URL = "https://api.climatiq.io/data/v1";
+
+/**
+ * Orquestación dinámica: 
+ * 1. Bedrock propone términos. 
+ * 2. Climatiq Search valida el factor. 
+ * 3. Bedrock extrae la unidad requerida.
+ */
+async function calculateInClimatiq(ocrSummary, queryHints = {}) {
+    console.log("---------- [SEMANTIC CLIMATIQ FLOW] ----------");
 
     try {
-        // Validación básica para evitar crashes por undefined
-        if (!ai_analysis) throw new Error("ai_analysis es undefined o null");
+        // --- PASO 1: BÚSQUEDA ---
+        const preAnalysis = await generarBusquedaSemantica(ocrSummary, queryHints);
+        console.log(`🔎 Intent: ${preAnalysis.search_query} (${preAnalysis.vendor})`);
 
-        const serviceType = ai_analysis.service_type?.toLowerCase() || 'unknown';
-        const calculationMethod = ai_analysis.calculation_method || 'unknown';
+        const searchRes = await fetch(`${BASE_URL}/search?query=${encodeURIComponent(preAnalysis.search_query)}&limit=1`, {
+            headers: { 'Authorization': `Bearer ${CLIMATIQ_API_KEY}` }
+        });
+        const searchData = await searchRes.json();
 
-        // --- LÓGICA DE NORMALIZACIÓN ---
-        function sanitizeUnits(sType, rawUnit, method) {
-            if (!rawUnit) return method === 'spend_based' ? 'eur' : 'kWh';
-            const unit = rawUnit.toLowerCase().trim();
-            if (method === 'spend_based') {
-                const currencyMap = { "euro": "eur", "euros": "eur", "eur": "eur", "dollar": "usd", "shekel": "ils" };
-                return currencyMap[unit] || "eur";
-            }
-            if (sType?.includes('elec') || sType?.includes('gas')) return 'kWh';
-            return "kWh"; 
+        if (!searchData.results?.length) {
+            throw new Error(`No factors found for: ${preAnalysis.search_query}`);
         }
 
-        function getAdjustedActivityId(method, sType) {
-            if (method === 'spend_based') {
-                if (sType.includes('elec')) return "energy-distribution"; 
-                if (sType.includes('gas')) return "gas-distribution";
-                return "industrial_processing-services"; 
-            }
-            return "electricity-supply_grid-source_production_mix";
-        }
+        const factor = searchData.results[0];
+        console.log(`✅ Match: ${factor.activity_id} | Needs: ${factor.unit_type}`);
 
-        const paramType = calculationMethod === 'spend_based' ? 'money' : 'energy';
-        const unit = sanitizeUnits(serviceType, ai_analysis.unit, calculationMethod);
-        const activityId = getAdjustedActivityId(calculationMethod, serviceType);
+        // --- PASO 2: EXTRACCIÓN DIRIGIDA ---
+        // Le pasamos el 'unit_type' real de la API a Bedrock
+        const extraction = await extraerValorEspecifico(ocrSummary, factor.unit_type);
 
-        // 2. CONSTRUCCIÓN DEL PAYLOAD
-        const finalPayload = {
+        // --- PASO 3: CONSTRUCCIÓN DINÁMICA ---
+        const payload = {
             data_version: DATA_VERSION,
             emission_factor: {
-                activity_id: activityId,
-                region: ai_analysis.region || "ES",
-                year: ai_analysis.year || 2023,
-                data_version: DATA_VERSION 
+                activity_id: factor.activity_id,
+                region: preAnalysis.region || factor.allowed_regions[0] || "WORLD"
             },
             parameters: {
-                [paramType]: Number(ai_analysis.value),
-                [`${paramType}_unit`]: unit
+                [extraction.key]: Number(extraction.value),
+                [`${extraction.key}_unit`]: extraction.unit
             }
         };
 
-        // --- LOG CRÍTICO ANTES DE FETCH ---
-        console.log("🚀 [CLIMATIQ_PAYLOAD_PRE_FLIGHT]:", JSON.stringify(finalPayload, null, 2));
-
-        const response = await fetch(baseUrl, {
-            method: "POST",
-            headers: { 
-                "Authorization": `Bearer ${apiKey}`, 
-                "Content-Type": "application/json" 
-            },
-            body: JSON.stringify(finalPayload)
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            console.error("❌ [CLIMATIQ_API_REJECTED]:", JSON.stringify(data, null, 2));
-            throw new Error(data.message || data.error_code);
+        // Manejo de moneda para cálculos basados en gasto
+        if (factor.unit_type === 'money') {
+            payload.parameters.currency = extraction.currency || "EUR";
         }
 
-        console.log("✅ [CLIMATIQ_SUCCESS]: CO2 =", data.co2e);
-        console.log("---------- [DEBUG SMS END] ----------");
+        console.log("🚀 [PAYLOAD]:", JSON.stringify(payload, null, 2));
+
+        // --- PASO 4: ESTIMACIÓN ---
+        const res = await fetch(`${BASE_URL}/estimate`, {
+            method: "POST",
+            headers: { 
+                "Authorization": `Bearer ${CLIMATIQ_API_KEY}`, 
+                "Content-Type": "application/json" 
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Estimation Failed");
 
         return {
-            calculation_id: data.calculation_id,
-            co2e: Number(data.co2e),
-            co2e_unit: data.co2e_unit,
-            activity_id: activityId,
-            audit_trail: "direct_match",
-            timestamp: new Date().toISOString()
+            co2e: data.co2e,
+            unit: data.co2e_unit,
+            activity_id: factor.activity_id,
+            vendor: preAnalysis.vendor,
+            audit: "semantic_search_v2"
         };
 
-    } catch (error) {
-        console.error("🔥 [FATAL_EXCEPTION_IN_WRAPPER]:", error.message);
-        throw error; 
+    } catch (err) {
+        console.error("❌ [CLIMATIQ_PIPELINE_ERROR]:", err.message);
+        return null; 
     }
 }
 
-// ESTA LÍNEA ES LA QUE SOLUCIONA EL "NOT A FUNCTION"
 module.exports = { calculateInClimatiq };

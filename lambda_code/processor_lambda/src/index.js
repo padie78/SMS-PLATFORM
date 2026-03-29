@@ -1,24 +1,19 @@
 const crypto = require("crypto");
 const { S3Client } = require("@aws-sdk/client-s3");
-
-// Importación de módulos de infraestructura y lógica
 const { extraerFactura } = require("./textract");
 const { entenderConIA } = require("./bedrock");
 const { calculateInClimatiq } = require("./external_api");
 const { saveInvoiceWithStats } = require("./db");
 const { downloadFromS3, buildGoldenRecord } = require("./utils");
 
-// Inicialización de cliente (fuera del handler para reutilizar ejecución en Lambda)
 const s3Client = new S3Client({ region: process.env.AWS_REGION || "eu-central-1" });
 
 exports.handler = async (event) => {
     const results = [];
 
     for (const record of event.Records) {
-        // 1. Obtener y limpiar el KEY correctamente
         const bucket = record.s3.bucket.name;
-        const rawKey = record.s3.object.key; 
-        const key = decodeURIComponent(rawKey.replace(/\+/g, ' '));
+        const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, ' '));
         
         try {
             const parts = key.split('/');
@@ -26,25 +21,29 @@ exports.handler = async (event) => {
             const filename = parts.pop();
             const fileId = filename.split('.')[0];
 
-            // 2. OCR - Llamada corregida (Solo bucket y key)
-            // No pases el s3Client aquí, la función extraerFactura ya tiene su propio textractClient
+            // 1. OCR Extraction
             const rawOcr = await extraerFactura(bucket, key);
             
-            // 3. Descarga (aquí sí usas s3Client)
+            // 2. File Metadata
             const fileBuffer = await downloadFromS3(s3Client, bucket, key);
             const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
-            // ... (resto de tu lógica de IA y DB)
-            const ai = await entenderConIA(rawOcr.summary, rawOcr.query_hints); // Cambiado a query_hints
-            const climatiq = await calculateInClimatiq(ai.ai_analysis) || {};
+            // 3. AI Analysis (Semantic Understanding)
+            // EntenderConIA now returns the structured object for both DB and Climatiq
+            const aiAnalysis = await entenderConIA(rawOcr.summary, rawOcr.query_hints);
 
-            const recordToSave = buildGoldenRecord(orgId, fileId, key, filename, fileHash, ai, climatiq);
+            // 4. Carbon Calculation
+            // We pass the raw summary so Climatiq wrapper can perform its own semantic search
+            const climatiqResult = await calculateInClimatiq(rawOcr.summary) || {};
+
+            // 5. Persistence
+            const recordToSave = buildGoldenRecord(orgId, fileId, key, filename, fileHash, aiAnalysis, climatiqResult);
             await saveInvoiceWithStats(recordToSave);
 
             results.push({ key, status: 'success' });
 
         } catch (err) {
-            console.error(`[ERROR] Falló el procesamiento de ${key}: ${err.message}`);
+            console.error(`[ERROR] Processing failed for ${key}: ${err.message}`);
             results.push({ key, status: 'error', message: err.message });
         }
     }
