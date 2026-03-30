@@ -40,65 +40,54 @@ async function downloadFromS3(s3Client, bucket, key) {
  */
 function buildGoldenRecord(orgId, fileId, key, filename, fileHash, ai, climatiq) {
     const now = new Date().toISOString();
-    const [datePart] = now.split('T');
+    const [datePart, timePart] = now.split('T'); // Separamos fecha y hora
     
     const year = datePart.split('-')[0];
     const month = datePart.split('-')[1];
 
-    // Normalización forzada de valores numéricos
-    const co2e = Number(climatiq?.co2e) || 0;
+    // FIX 1: Mapeo correcto desde climatiq.total_co2e
+    const co2e = Number(climatiq?.total_co2e) || 0;
     const amount = Number(ai.extracted_data?.total_amount) || 0;
     const serviceType = ai.ai_analysis?.service_type || "Unknown";
     const confidence = Number(ai.ai_analysis?.confidence_score) || 0;
 
+    // FIX 2: SK con colisión cero para desarrollo. 
+    // Agregamos los segundos del TimePart para que cada intento sea nuevo.
+    const timeHash = timePart.replace(/:/g, '').split('.')[0]; 
+    const sk = `INV#${datePart}#${fileHash.substring(0, 8)}#${timeHash}`;
+
     return {
+        // Estructura para que db.js haga el reduce sin explotar
         internal_refs: {
             orgId,
             year,
             month,
-            co2e,
             totalAmount: amount,
-            serviceType
+            items: climatiq?.items || [] // <--- IMPORTANTE para el reduce en db.js
         },
         full_record: {
             PK: `ORG#${orgId}`,
-            // Usamos el fileHash en el SK para evitar colisiones si se procesa el mismo día
-            SK: `INV#${datePart}#${fileHash.substring(0, 8)}`, 
+            SK: sk, 
             metadata: { 
                 filename, 
                 s3_key: key, 
                 file_hash: fileHash, 
                 upload_date: now, 
-                status: "PROCESSED",
-                source: "SYSTEM_PIPELINE"
+                status: "PROCESSED"
             },
             extracted_data: { 
                 ...ai.extracted_data, 
                 total_amount: amount,
-                currency: ai.extracted_data?.currency || "EUR" // Iberdrola default
-            },
-            ai_analysis: { 
-                ...ai.ai_analysis, 
-                confidence_score: confidence,
-                requires_review: confidence < 0.80 // Umbral de negocio
+                currency: ai.extracted_data?.currency || "EUR"
             },
             climatiq_result: { 
                 ...climatiq, 
-                co2e, 
-                timestamp: now,
-                co2e_unit: "kg" 
-            },
-            analytics_dimensions: {
-                period_year: parseInt(year),
-                period_month: parseInt(month),
-                // Evitamos división por cero y redondeamos
-                carbon_intensity: amount > 0 ? Number((co2e / amount).toFixed(5)) : 0,
-                sector: "CONSTRUCTION"
+                total_co2e: co2e, // Normalizado
+                timestamp: now
             }
         }
     };
 }
-
 module.exports = { 
     limpiarTexto, 
     validarCampos, 
