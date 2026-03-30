@@ -6,16 +6,7 @@ const BASE_URL = "https://api.climatiq.io/data/v1";
 
 function buildClimatiqParameters(strategy, line) {
     const val = Number(line.value) || 0;
-    
-    // Mapeo de unidades para evitar el error de 'kwh' inválido
-    const unitMapping = {
-        "kwh": "kWh",
-        "kWh": "kWh",
-        "kg": "kg",
-        "t": "t",
-        "km": "km"
-    };
-
+    const unitMapping = { "kwh": "kWh", "kWh": "kWh", "kg": "kg", "t": "t", "km": "km" };
     const rawUnit = (line.unit || strategy.default_unit || "").toLowerCase();
     const cleanUnit = unitMapping[rawUnit] || rawUnit;
 
@@ -35,49 +26,52 @@ function buildClimatiqParameters(strategy, line) {
 }
 
 async function calculateInClimatiq(ocrSummary, queryHints = {}) {
+    // Inicializamos el objeto de respuesta por defecto para evitar 'undefined'
+    const defaultResponse = {
+        total_co2e: 0,
+        items: [],
+        invoice_metadata: {}
+    };
+
     try {
         const fullAnalysis = await entenderFacturaParaClimatiq(ocrSummary, queryHints);
-        const lines = fullAnalysis?.emission_lines || [];
-        const meta = fullAnalysis?.extracted_data || {};
-
-        if (!lines || lines.length === 0) {
-            return { total_co2e: 0, items: [], invoice_metadata: meta };
+        
+        // Verificación de seguridad: si Bedrock falla o no hay líneas
+        if (!fullAnalysis || !fullAnalysis.emission_lines) {
+            return defaultResponse;
         }
+
+        const lines = fullAnalysis.emission_lines;
+        const meta = fullAnalysis.extracted_data || {};
 
         const linePromises = lines.map(async (line) => {
             const strategy = STRATEGIES[line.strategy];
-            if (!strategy) return { success: false, error: "Strategy Not Found", desc: line.description };
+            if (!strategy) return { success: false, error: "Strategy Not Found" };
 
             const params = buildClimatiqParameters(strategy, line);
+            if (!params) return { success: false, error: "Invalid Params" };
 
             try {
-                const requestBody = JSON.stringify({
-                    emission_factor: {
-                        activity_id: strategy.activity_id,
-                        data_version: "^1",
-                        region: "GB", // O "ES" según prefieras
-                        year: 2021
-                    },
-                    parameters: params
-                });
-
                 const res = await fetch(`${BASE_URL}/estimate`, {
                     method: "POST",
                     headers: { 
                         "Authorization": `Bearer ${CLIMATIQ_API_KEY}`, 
                         "Content-Type": "application/json"
                     },
-                    body: requestBody
+                    body: JSON.stringify({
+                        emission_factor: {
+                            activity_id: strategy.activity_id,
+                            data_version: "^1",
+                            region: "GB", 
+                            year: 2021
+                        },
+                        parameters: params
+                    })
                 });
 
                 const data = await res.json();
-                
-                if (!res.ok) {
-                    console.error(`❌ [CLIMATIQ_REJECTED]: ${data.message}`);
-                    return { success: false, error: data.message, desc: line.description };
-                }
+                if (!res.ok) return { success: false, error: data.message };
 
-                // IMPORTANTE: Climatiq devuelve 'co2e' en la raíz del JSON
                 return {
                     success: true,
                     co2e: data.co2e || 0,
@@ -86,24 +80,24 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
                     description: line.description
                 };
             } catch (e) {
-                return { success: false, error: e.message, desc: line.description };
+                return { success: false, error: e.message };
             }
         });
 
         const results = await Promise.all(linePromises);
         
-        // Filtramos solo los éxitos para el cálculo total
+        // Filtramos resultados nulos o fallidos para el cálculo
         const successfulOnes = results.filter(r => r && r.success);
         const total = successfulOnes.reduce((acc, curr) => acc + (curr.co2e || 0), 0);
 
-        // LOG DE CONTROL: Esto es lo que veías como 'undefined'
+        // LOG DE SEGURIDAD
         if (successfulOnes.length > 0) {
-            console.log(`✅ [CALCULATED]: ${total} ${successfulOnes[0].unit} CO2e`);
+            console.log(`✅ [CALCULATED]: ${total.toFixed(5)} ${successfulOnes[0].unit} CO2e`);
         }
 
         return {
             total_co2e: total,
-            items: results, 
+            items: results, // Enviamos todos (éxitos y fallos) para debug
             invoice_metadata: {
                 vendor: meta.vendor?.name || "Unknown",
                 invoice_no: meta.invoice_number || "N/A",
@@ -114,9 +108,8 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
         };
 
     } catch (err) {
-        console.error("❌ [FATAL_INTERNAL_API_ERROR]:", err.message);
-        // Retorno de emergencia para que el .reduce() de afuera no falle
-        return { total_co2e: 0, items: [], invoice_metadata: {} };
+        console.error("❌ [FATAL_INTERNAL_ERROR]:", err.message);
+        return defaultResponse; 
     }
 }
 
