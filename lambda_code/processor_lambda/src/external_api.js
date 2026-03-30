@@ -5,48 +5,55 @@ const DATA_VERSION = "^32";
 const BASE_URL = "https://api.climatiq.io/data/v1";
 
 /**
- * Orquestación dinámica con Loop de Parámetros (Architecture v3)
+ * Orquestación con Log detallado de todos los Activity IDs encontrados
  */
 async function calculateInClimatiq(ocrSummary, queryHints = {}) {
     const startTime = Date.now();
     console.log("---------- [SEMANTIC CLIMATIQ FLOW START] ----------");
 
     try {
-        // --- PASO 1: ANÁLISIS SEMÁNTICO (BEDROCK) ---
         const preAnalysis = await generarBusquedaSemantica(ocrSummary, queryHints);
         const region = preAnalysis.region || "ES";
-        console.log(`[INFO] Intent: ${preAnalysis.service_type} | Region: ${region}`);
+        const searchQuery = preAnalysis.search_query; 
+        
+        console.log(`[INFO] Intent Query: "${searchQuery}" | Region: ${region}`);
 
-        // --- PASO 2: BÚSQUEDA POR CATEGORÍA ---
-        let searchData = await callClimatiqSearch(preAnalysis.service_type, region);
-        let usedGlobalFallback = false;
-
+        // --- PASO 2: BÚSQUEDA Y LOG DE ACTIVIDADES ---
+        let searchData = await callClimatiqSearch(searchQuery, region);
+        
         if (!searchData.results?.length) {
-            console.warn(`[WARN] No factors in ${region}. Trying Global...`);
-            searchData = await callClimatiqSearch(preAnalysis.service_type, "WORLD");
-            usedGlobalFallback = true;
+            console.warn(`[WARN] No FREE factors for "${searchQuery}" in ${region}. Trying Global...`);
+            searchData = await callClimatiqSearch(searchQuery, "WORLD");
         }
 
-        if (!searchData.results?.length) throw new Error("No emission factors found.");
+        if (!searchData.results?.length) {
+            throw new Error(`Critical: No free factors found for "${searchQuery}"`);
+        }
 
+        // --- LOG DE TODAS LAS ACTIVIDADES ENCONTRADAS ---
+        console.log("=== [CLIMATIQ_ACTIVITIES_FOUND] ===");
+        searchData.results.forEach((res, index) => {
+            console.log(`${index + 1}. ID: ${res.activity_id}`);
+            console.log(`   Desc: ${res.name || 'No description'}`);
+            console.log(`   Year: ${res.year} | Source: ${res.source}`);
+            console.log(`   Unit Type: ${res.unit_type}`);
+            console.log('   -----------------------------------');
+        });
+
+        // Seleccionamos el primero para el cálculo
         const factor = searchData.results[0];
-        console.log(`[INFO] Factor: ${factor.activity_id} (Needs: ${factor.unit_type})`);
+        console.log(`[INFO] Selected for Calculation: ${factor.activity_id}`);
 
-        // --- PASO 3: EXTRACCIÓN MULTI-PARAM (BEDROCK) ---
-        // Ahora esperamos que Bedrock devuelva un objeto con las keys necesarias
+        // --- PASO 3: EXTRACCIÓN MULTI-PARAM ---
         const extractions = await extraerValorEspecifico(ocrSummary, factor.unit_type);
 
-        // --- PASO 4: CONSTRUCCIÓN DINÁMICA CON LOOP ---
+        // --- PASO 4: LOOP DE PARÁMETROS ---
         const parameters = {};
-        const keys = Object.keys(extractions); // Ej: ['energy', 'money']
-
-        keys.forEach(key => {
+        Object.keys(extractions).forEach(key => {
             const data = extractions[key];
             if (data && data.value !== undefined) {
                 parameters[key] = Number(data.value);
                 parameters[`${key}_unit`] = data.unit.toLowerCase();
-                
-                // Inyectar moneda si existe en cualquier extracción de tipo money
                 if (data.currency) parameters.currency = data.currency;
             }
         });
@@ -59,8 +66,6 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
             },
             parameters: parameters
         };
-
-        console.log("🚀 [CLIMATIQ_ESTIMATE_PAYLOAD]:", JSON.stringify(payload, null, 2));
 
         // --- PASO 5: ESTIMACIÓN ---
         const res = await fetch(`${BASE_URL}/estimate`, {
@@ -75,15 +80,13 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Estimation Failed");
 
-        const duration = Date.now() - startTime;
-        console.log(`✅ [CLIMATIQ_SUCCESS]: ${data.co2e} ${data.co2e_unit} en ${duration}ms.`);
+        console.log(`✅ [CLIMATIQ_SUCCESS]: ${data.co2e} ${data.co2e_unit}`);
 
         return {
             co2e: data.co2e,
             unit: data.co2e_unit,
             activity_id: factor.activity_id,
-            vendor: preAnalysis.vendor,
-            audit: usedGlobalFallback ? "category_global_v3" : "category_region_v3"
+            vendor: preAnalysis.vendor
         };
 
     } catch (err) {
@@ -93,14 +96,15 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
 }
 
 /**
- * Helper: Búsqueda por Categoría
+ * Helper: Búsqueda libre con límite aumentado para ver más opciones
  */
-async function callClimatiqSearch(serviceType, region) {
-    const categoryMap = { 'elec': 'Electricity', 'gas': 'Fuel Combustion', 'fuel': 'Fuel Combustion', 'water': 'Water' };
-    const category = categoryMap[serviceType] || 'Electricity';
+async function callClimatiqSearch(query, region) {
+    // Subimos el limit a 5 para poder loguear varias opciones
+    const url = `${BASE_URL}/search?query=${encodeURIComponent(query)}&region=${region}&access_type=free&limit=5`;
     
-    const url = `${BASE_URL}/search?category=${category}&region=${region}&limit=1`;
-    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${CLIMATIQ_API_KEY}` } });
+    const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${CLIMATIQ_API_KEY}` }
+    });
     return await res.json();
 }
 
