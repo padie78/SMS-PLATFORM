@@ -1,7 +1,7 @@
 const { STRATEGIES, DATA_VERSION } = require("./constants/climatiq_catalog");
 const { entenderFacturaParaClimatiq } = require("./bedrock");
 
-const CLIMATIQ_API_KEY = process.env.CLIMATIQ_API_KEY; 
+const CLIMATIQ_API_KEY = "2E44QNZJMX5X5B6EM43E88KRZ8"; 
 const BASE_URL = "https://api.climatiq.io/data/v1";
 
 function buildClimatiqParameters(strategy, line) {
