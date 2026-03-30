@@ -41,9 +41,11 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
             try {
                 // FIX: Aseguramos el orden de las llaves manualmente
                 const requestBody = JSON.stringify({
-                    data_version: VERSION,
                     emission_factor: {
-                        activity_id: strategy.activity_id
+                        activity_id: strategy.activity_id,
+                        data_version: "^3", // Versión dinámica como en tu ejemplo
+                        region: "GB", 
+                        year: 2021
                     },
                     parameters: params
                 });
