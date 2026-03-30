@@ -99,7 +99,7 @@ async function exploreFreeActivities(query = "") {
     console.log(`[SEARCHING]: ${query || "ALL FREE FACTORS"}`);
 
     try {
-        let url = `${BASE_URL}/search?access_type=free&results_per_page=100`;
+        let url = `${BASE_URL}/search?access_type=public&results_per_page=100`;
         if (query) url += `&query=${encodeURIComponent(query)}`;
 
         const res = await fetch(url, {
