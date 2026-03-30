@@ -1,3 +1,17 @@
+const crypto = require("crypto");
+const { S3Client } = require("@aws-sdk/client-s3");
+const { extraerFactura } = require("./textract");
+const { calculateInClimatiq } = require("./external_api");
+const { saveInvoiceWithStats } = require("./db");
+const { downloadFromS3, buildGoldenRecord } = require("./utils");
+
+// Configuración de Clientes AWS
+const s3Client = new S3Client({ region: process.env.AWS_REGION || "eu-central-1" });
+
+/**
+ * LAMBDA HANDLER: Orquestador Principal del Pipeline de Carbono
+ * Flujo: S3 Trigger -> Textract (OCR) -> Bedrock (AI) -> Climatiq (CO2e) -> DynamoDB/RDS
+ */
 exports.handler = async (event, context) => {
     const results = [];
     const requestId = context.awsRequestId;
