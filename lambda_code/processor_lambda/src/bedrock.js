@@ -1,99 +1,60 @@
 const { BedrockRuntimeClient, InvokeModelCommand } = require("@aws-sdk/client-bedrock-runtime");
+const { STRATEGIES } = require("./constants/climatiq_catalog");
 
 const client = new BedrockRuntimeClient({ region: "eu-central-1" });
 const MODEL_ID = "eu.anthropic.claude-haiku-4-5-20251001-v1:0";
 
-/**
- * Normalización de tipos de datos para asegurar el contrato JSON.
- */
-const validarYLimpiarResultado = (resultado) => {
-    const parseNumeric = (val) => {
-        if (typeof val === 'number') return val;
-        if (typeof val === 'string') {
-            const clean = val.replace(/[^\d,.-]/g, '').replace(',', '.');
-            const parsed = parseFloat(clean);
-            return isNaN(parsed) ? 0.0 : parsed;
-        }
-        return 0.0;
-    };
+exports.entenderFacturaParaClimatiq = async (summary, queryHints = {}) => {
+    const systemPrompt = `
+You are a Senior Sustainability Data Engineer & ESG Auditor.
+Mission: Extract both accounting and emission data from invoice OCR summaries.
 
-    if (resultado.extracted_data) {
-        resultado.extracted_data.total_amount = parseNumeric(resultado.extracted_data.total_amount);
-    }
+### CORE OPERATIONAL RULES:
+1. CLASSIFICATION: Map the invoice to exactly ONE of these strategies: ${Object.keys(STRATEGIES).join(', ')}.
+2. IDENTITY: Extract full vendor details (Name and Tax ID if visible).
+3. TEMPORAL PRECISION: Differentiate between 'invoice_date' and 'billing_period'. Emission factors depend on the year of consumption.
+4. NO PROSE: Output ONLY valid JSON.
 
-    if (resultado.ai_analysis) {
-        resultado.ai_analysis.value = parseNumeric(resultado.ai_analysis.value);
-        resultado.ai_analysis.year = parseInt(resultado.ai_analysis.year) || new Date().getFullYear() - 1;
-    }
-
-    if (resultado.climatiq_ready_payload && resultado.climatiq_ready_payload.parameters) {
-        const params = resultado.climatiq_ready_payload.parameters;
-        Object.keys(params).forEach(key => {
-            if (!key.endsWith('_unit')) {
-                params[key] = parseNumeric(params[key]);
-            }
-        });
-    }
-
-    return resultado;
-};
-
-/**
- * Tu System Prompt Exacto (Sin modificaciones)
- */
-const getSystemPrompt = () => `
-You are a Senior Sustainability Data Engineer. 
-Mission: Act as a deterministic middleware between raw OCR and Climatiq API.
-
-### RULES:
-1. NO PROSE: Output ONLY valid JSON.
-2. ISO CODES: Country -> ISO 3166-1 alpha-2. Currency -> ISO 4217.
-3. PARAMETER LOGIC:
-   - service 'elec' or 'gas' -> parameter_type: 'energy'
-   - service 'water' or 'fuel' -> parameter_type: 'volume'
-   - spend-based -> parameter_type: 'money'
-
-### OUTPUT SCHEMA:
+### REQUIRED OUTPUT SCHEMA:
 {
   "extracted_data": {
-    "vendor": "string",
-    "total_amount": float,
-    "currency": "ISO_CODE"
+    "vendor": {
+        "name": "string",
+        "tax_id": "string",
+        "address": "string"
+    },
+    "invoice_number": "string",
+    "invoice_date": "YYYY-MM-DD",
+    "billing_period": { 
+        "start": "YYYY-MM-DD", 
+        "end": "YYYY-MM-DD" 
+    },
+    "currency": "ISO_4217",
+    "total_amount_with_tax": float,
+    "total_amount_net": float
   },
   "ai_analysis": {
-    "service_type": "elec|gas|water|fuel",
+    "strategy": "ELEC|GAS|LOGISTICS|FLEET|WASTE_PAPER",
+    "confidence_score": float,
+    "reasoning": "string",
     "year": int,
-    "calculation_method": "consumption_based|spend_based",
-    "activity_id": "string",
-    "parameter_type": "energy|volume|money",
+    "region": "ISO_CODE",
     "value": float,
     "unit": "string",
-    "region": "ISO_CODE"
-  },
-  "climatiq_ready_payload": {
-    "activity_id": "string",
-    "region": "ISO_CODE",
-    "parameters": {
-       "DYNAMIC_KEY": float,
-       "DYNAMIC_KEY_unit": "string"
+    "logistics_meta": {
+       "weight": float,
+       "distance": float
     }
   }
 }`;
 
-/**
- * Función base de invocación para Bedrock
- */
-async function invokeBedrock(summary, queryHints, customInstruction = "") {
     const payload = {
         anthropic_version: "bedrock-2023-05-31",
-        max_tokens: 3000,
-        system: getSystemPrompt(),
+        max_tokens: 1000,
+        system: systemPrompt,
         messages: [{ 
             role: "user", 
-            content: `${customInstruction}
-                      Analyze this document for carbon accounting:
-                      QUERY_HINTS: ${JSON.stringify(queryHints)}
-                      FULL_SUMMARY: ${summary}` 
+            content: `Analyze this invoice: ${summary}. Hints: ${JSON.stringify(queryHints)}` 
         }],
         temperature: 0
     };
@@ -101,74 +62,10 @@ async function invokeBedrock(summary, queryHints, customInstruction = "") {
     const command = new InvokeModelCommand({
         modelId: MODEL_ID,
         contentType: "application/json",
-        accept: "application/json",
         body: JSON.stringify(payload)
     });
 
     const response = await client.send(command);
     const rawRes = JSON.parse(new TextDecoder().decode(response.body));
-    const contentText = rawRes.content[0].text;
-    const jsonMatch = contentText.match(/\{[\s\S]*\}/);
-    
-    if (!jsonMatch) throw new Error("Bedrock did not return a valid JSON block.");
-    
-    return validarYLimpiarResultado(JSON.parse(jsonMatch[0]));
-}
-
-/**
- * PASO 1: Generar keywords y CLASIFICAR el servicio
- */
-exports.generarBusquedaSemantica = async (summary, queryHints = {}) => {
-    // Cambiamos la instrucción para que use el vocabulario de Climatiq
-    const instruction = `Mission: Map the document to Climatiq Search terms.
-    - If electricity: Use "Electricity supplied from grid"
-    - If gas: Use "Natural gas"
-    - If fuel/diesel: Use "Diesel" or "Fuel oil"
-    - If water: Use "Water supply"
-    
-    Classification for service_type: 'elec', 'gas', 'water', 'fuel'.
-    Region must be ISO-3166-1 alpha-2 (e.g., 'ES' for Spain).`;
-    
-    const result = await invokeBedrock(summary, queryHints, instruction);
-    
-    // Mapeo manual de emergencia para asegurar que el query sea limpio
-    const climatiqTerms = {
-        'elec': 'Electricity supplied from grid',
-        'gas': 'Natural gas',
-        'water': 'Water supply',
-        'fuel': 'Diesel'
-    };
-
-    const service = result.ai_analysis?.service_type || 'elec';
-    const normalizedQuery = climatiqTerms[service] || service;
-
-    return {
-        ...result,
-        service_type: service,
-        // Ahora el query es: "Electricity supplied from grid" en vez de "ELEIA elec"
-        search_query: normalizedQuery, 
-        vendor: result.extracted_data?.vendor || "Unknown",
-        region: result.ai_analysis?.region || "ES"
-    };
+    return JSON.parse(rawRes.content[0].text);
 };
-
-/**
- * PASO 2: Extraer el valor basado en la unidad confirmada
- * (Esta se queda igual, pero asegúrate de que use el resultado limpiado)
- */
-exports.extraerValorEspecifico = async (summary, unitType, queryHints = {}) => {
-    const instruction = `The Climatiq API requires a value for: ${unitType}. 
-    Focus ONLY on extracting the numerical value and its specific unit from the text.`;
-    
-    const result = await invokeBedrock(summary, queryHints, instruction);
-    
-    return {
-        value: result.ai_analysis?.value || 0,
-        key: result.ai_analysis?.parameter_type || 'energy',
-        unit: result.ai_analysis?.unit || 'kWh',
-        currency: result.extracted_data?.currency || 'EUR'
-    };
-};
-
-// Mantenemos la exportación original por si otros módulos la usan
-exports.entenderConIA = invokeBedrock;
