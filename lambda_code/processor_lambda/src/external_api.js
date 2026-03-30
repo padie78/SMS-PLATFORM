@@ -36,7 +36,7 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
                         "Content-Type": "application/json" 
                     },
                     body: JSON.stringify({
-                        data_version: DATA_VERSION || "^1",
+                        data_version: "32.32",
                         emission_factor: { activity_id: strategy.activity_id },
                         parameters: buildClimatiqParameters(strategy, line)
                     })
