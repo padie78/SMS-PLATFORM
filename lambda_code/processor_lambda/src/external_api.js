@@ -1,4 +1,6 @@
 // external_api.js
+const { entenderFacturaParaClimatiq } = require("./bedrock"); // <--- ESTA ES LA CLAVE
+const { STRATEGIES, DATA_VERSION } = require("./constants/climatiq_catalog");
 
 /** * Esta función es el "Mapper" que limpia el loop principal.
  * Convierte lo que la IA entendió en lo que la API de Climatiq exige.
