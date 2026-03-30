@@ -1,15 +1,19 @@
-const { STRATEGIES, DATA_VERSION } = require("./constants/climatiq_catalog");
+const { STRATEGIES } = require("./constants/climatiq_catalog");
 const { entenderFacturaParaClimatiq } = require("./bedrock");
 
+// Te recomiendo mover la Key a Environment Variables en AWS, 
+// pero para el fix la mantenemos aquí.
 const CLIMATIQ_API_KEY = "2E44QNZJMX5X5B6EM43E88KRZ8"; 
 const BASE_URL = "https://api.climatiq.io/data/v1";
 
 function buildClimatiqParameters(strategy, line) {
-    const unit = line.unit?.toLowerCase() || strategy.default_unit;
+    const val = Number(line.value) || 0;
+    const unit = (line.unit || strategy.default_unit || "").toLowerCase();
+    
     switch (strategy.unit_type) {
-        case "energy": return { energy: Number(line.value), energy_unit: unit };
-        case "weight": return { weight: Number(line.value), weight_unit: unit };
-        case "distance": return { distance: Number(line.value), distance_unit: unit };
+        case "energy": return { energy: val, energy_unit: unit };
+        case "weight": return { weight: val, weight_unit: unit };
+        case "distance": return { distance: val, distance_unit: unit };
         default: return null;
     }
 }
@@ -17,8 +21,6 @@ function buildClimatiqParameters(strategy, line) {
 async function calculateInClimatiq(ocrSummary, queryHints = {}) {
     try {
         const fullAnalysis = await entenderFacturaParaClimatiq(ocrSummary, queryHints);
-        
-        // 1. Blindaje de entrada: Si la IA falla, retornamos estructura vacía segura
         const lines = fullAnalysis?.emission_lines || [];
         const meta = fullAnalysis?.extracted_data || {};
 
@@ -28,25 +30,34 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
             const strategy = STRATEGIES[line.strategy];
             if (!strategy) return { success: false, error: "No Strategy", desc: line.description };
 
+            const params = buildClimatiqParameters(strategy, line);
+
             try {
+                // CLIMATIQ ESTRUCTURA 32.32 ESTRICTA:
+                const requestBody = {
+                    data_version: "32.32", // OBLIGATORIO AL INICIO
+                    emission_factor: {
+                        activity_id: strategy.activity_id
+                        // Nota: NO incluimos 'region' ni 'year' aquí si usamos activity_id genéricos
+                    },
+                    parameters: params
+                };
+
                 const res = await fetch(`${BASE_URL}/estimate`, {
                     method: "POST",
                     headers: { 
                         "Authorization": `Bearer ${CLIMATIQ_API_KEY}`, 
                         "Content-Type": "application/json" 
                     },
-                    body: JSON.stringify({
-                        data_version: "32.32",
-                        emission_factor: { activity_id: strategy.activity_id },
-                        parameters: buildClimatiqParameters(strategy, line)
-                    })
+                    body: JSON.stringify(requestBody)
                 });
 
                 const data = await res.json();
                 
-                // 2. Log de seguridad para ver qué responde Climatiq realmente
                 if (!res.ok) {
-                    console.error(`❌ [CLIMATIQ_API_REJECTED]: ${data.message}`);
+                    // Si el error es de versión otra vez, Climatiq nos está pidiendo 
+                    // que el factor de emisión sea mapeado de forma diferente
+                    console.error(`❌ [CLIMATIQ_REJECTED]: ${data.message}`);
                     return { success: false, error: data.message, desc: line.description };
                 }
 
@@ -63,10 +74,7 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
         });
 
         const results = await Promise.all(linePromises);
-
-        // 3. PROTECCIÓN FINAL DEL REDUCE:
-        // Filtramos para asegurar que el objeto tenga la propiedad 'co2e' y sea exitoso
-        const successfulOnes = results.filter(r => r && r.success && typeof r.co2e === 'number');
+        const successfulOnes = (results || []).filter(r => r && r.success && typeof r.co2e === 'number');
 
         return {
             total_co2e: successfulOnes.reduce((acc, curr) => acc + curr.co2e, 0),
