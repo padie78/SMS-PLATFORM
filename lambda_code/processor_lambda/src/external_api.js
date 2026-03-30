@@ -43,13 +43,19 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
                     parameters: params
                 };
 
-                const res = await fetch(`${BASE_URL}/estimate`, {
+                const urlWithVersion = `${BASE_URL}/estimate?data_version=32.32`;
+
+                const res = await fetch(urlWithVersion, {
                     method: "POST",
                     headers: { 
                         "Authorization": `Bearer ${CLIMATIQ_API_KEY}`, 
-                        "Content-Type": "application/json" 
+                        "Content-Type": "application/json",
+                        "Accept": "application/json" // Aseguramos negociación de contenido
                     },
-                    body: JSON.stringify(requestBody)
+                    body: JSON.stringify({
+                        ...requestBody,
+                        data_version: "32.32" // Reforzamos dentro del JSON también
+                    })
                 });
 
                 const data = await res.json();
