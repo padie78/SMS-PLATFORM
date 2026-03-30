@@ -1,14 +1,10 @@
 const { STRATEGIES } = require("./constants/climatiq_catalog");
 const { entenderFacturaParaClimatiq } = require("./bedrock");
 
-// Configuración Base
 const CLIMATIQ_API_KEY = "2E44QNZJMX5X5B6EM43E88KRZ8"; 
 const BASE_URL = "https://api.climatiq.io/data/v1";
 const VERSION = "32.32";
 
-/**
- * Normaliza los parámetros para Climatiq asegurando tipos numéricos.
- */
 function buildClimatiqParameters(strategy, line) {
     const val = Number(line.value) || 0;
     const unit = (line.unit || strategy.default_unit || "").toLowerCase();
@@ -28,56 +24,44 @@ function buildClimatiqParameters(strategy, line) {
     }
 }
 
-/**
- * Procesa el análisis de Bedrock y ejecuta las llamadas a Climatiq.
- */
 async function calculateInClimatiq(ocrSummary, queryHints = {}) {
     try {
-        // 1. Análisis de IA con Bedrock
         const fullAnalysis = await entenderFacturaParaClimatiq(ocrSummary, queryHints);
         const lines = fullAnalysis?.emission_lines || [];
         const meta = fullAnalysis?.extracted_data || {};
 
-        if (lines.length === 0) return null;
+        if (lines.length === 0) return { total_co2e: 0, items: [], invoice_metadata: meta };
 
-        // 2. Mapeo de promesas para cálculo en paralelo
         const linePromises = lines.map(async (line) => {
             const strategy = STRATEGIES[line.strategy];
-            if (!strategy) return { success: false, error: "Strategy Not Found", desc: line.description };
+            if (!strategy) return { success: false, error: "Strategy Not Found" };
 
             const params = buildClimatiqParameters(strategy, line);
-            if (!params) return { success: false, error: "Invalid Params", desc: line.description };
 
             try {
-                /**
-                 * SOLUCIÓN "NUCLEAR" AL ERROR 103:
-                 * Construimos el JSON como un String Literal. 
-                 * Esto evita que Node.js reordene las llaves y asegura que 
-                 * 'data_version' sea lo primero que reciba el servidor.
-                 */
-                const manualRawBody = `{
-                    "data_version": "${VERSION}",
-                    "emission_factor": {
-                        "activity_id": "${strategy.activity_id}"
+                // FIX: Aseguramos el orden de las llaves manualmente
+                const requestBody = JSON.stringify({
+                    data_version: VERSION,
+                    emission_factor: {
+                        activity_id: strategy.activity_id
                     },
-                    "parameters": ${JSON.stringify(params)}
-                }`;
+                    parameters: params
+                });
 
                 const res = await fetch(`${BASE_URL}/estimate?data_version=${VERSION}`, {
                     method: "POST",
                     headers: { 
                         "Authorization": `Bearer ${CLIMATIQ_API_KEY}`, 
-                        "Content-Type": "application/json",
-                        "Accept": "application/json"
+                        "Content-Type": "application/json"
                     },
-                    body: manualRawBody // Enviamos el string sin procesar por JSON.stringify
+                    body: requestBody
                 });
 
                 const data = await res.json();
                 
                 if (!res.ok) {
                     console.error(`❌ [CLIMATIQ_REJECTED]: ${line.strategy} -> ${data.message}`);
-                    return { success: false, error: data.message, desc: line.description };
+                    return { success: false, error: data.message };
                 }
 
                 return {
@@ -87,22 +71,17 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
                     strategy: line.strategy,
                     description: line.description
                 };
-
             } catch (e) {
                 return { success: false, error: e.message };
             }
         });
 
-        // 3. Consolidación de resultados con Blindaje contra Undefined
         const results = await Promise.all(linePromises);
-        
-        // Blindaje: Aseguramos que results sea un array antes del filter/reduce
-        const safeResults = results || [];
-        const successfulOnes = safeResults.filter(r => r && r.success);
+        const successfulOnes = results.filter(r => r && r.success);
 
         return {
             total_co2e: successfulOnes.reduce((acc, curr) => acc + (curr.co2e || 0), 0),
-            items: safeResults, 
+            items: results, 
             invoice_metadata: {
                 vendor: meta.vendor?.name || "Unknown",
                 invoice_no: meta.invoice_number || "N/A",
@@ -113,8 +92,7 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
         };
 
     } catch (err) {
-        console.error("❌ [FATAL_EXTERNAL_API_ERROR]:", err.message);
-        // Retornamos un objeto mínimo para no romper el .reduce() del llamador
+        console.error("❌ [FATAL_ERROR]:", err.message);
         return { total_co2e: 0, items: [], invoice_metadata: {} };
     }
 }

@@ -2,7 +2,7 @@
 module.exports = {
     STRATEGIES: {
         ELEC: {
-            activity_id: "electricity-supply_grid-source_supplier_mix", // O el mix específico
+            activity_id: "electricity-supply_grid_mix-source_supplier_mix", 
             query: "grid_mix",
             unit_type: "energy",
             default_unit: "kWh"
