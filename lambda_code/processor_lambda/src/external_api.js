@@ -4,78 +4,31 @@ const { entenderFacturaParaClimatiq } = require("./bedrock");
 const CLIMATIQ_API_KEY = process.env.CLIMATIQ_API_KEY; 
 const BASE_URL = "https://api.climatiq.io/data/v1";
 
-/**
- * Helper: Mapea los datos de la IA al formato exacto que pide Climatiq según la estrategia
- */
 function buildClimatiqParameters(strategy, line) {
     const unit = line.unit?.toLowerCase() || strategy.default_unit;
-    
     switch (strategy.unit_type) {
-        case "energy":
-            return { energy: line.value, energy_unit: unit };
-        
-        case "weightoverdistance":
-            return {
-                weight: line.logistics_meta?.weight || line.value || 0,
-                weight_unit: "t",
-                distance: line.logistics_meta?.distance || 0,
-                distance_unit: "km"
-            };
-        
-        case "distance":
-            return { 
-                distance: line.logistics_meta?.distance || line.value || 0, 
-                distance_unit: unit 
-            };
-        
-        case "weight":
-            return { weight: line.value, weight_unit: unit };
-            
-        default:
-            return null;
+        case "energy": return { energy: Number(line.value), energy_unit: unit };
+        case "weight": return { weight: Number(line.value), weight_unit: unit };
+        case "distance": return { distance: Number(line.value), distance_unit: unit };
+        default: return null;
     }
 }
 
-/**
- * Orquestador de Cálculo: Procesa N líneas de emisión de una factura en paralelo
- */
 async function calculateInClimatiq(ocrSummary, queryHints = {}) {
     try {
-        // 1. Invocación a Bedrock (IA)
         const fullAnalysis = await entenderFacturaParaClimatiq(ocrSummary, queryHints);
         
-        // Debug para ver qué devolvió la IA en CloudWatch
-        console.log("🔍 [AI_FULL_ANALYSIS]:", JSON.stringify(fullAnalysis, null, 2));
+        // 1. Blindaje de entrada: Si la IA falla, retornamos estructura vacía segura
+        const lines = fullAnalysis?.emission_lines || [];
+        const meta = fullAnalysis?.extracted_data || {};
 
-        // 2. Validación de Estructura (Evita el error 'Cannot read properties of undefined reading map')
-        const lines = fullAnalysis?.emission_lines || fullAnalysis?.line_items || [];
-        const extractedData = fullAnalysis?.extracted_data || {};
+        if (lines.length === 0) return null;
 
-        if (lines.length === 0) {
-            console.error("⚠️ [DATA_ISSUE]: Bedrock no devolvió líneas de emisión válidas.");
-            throw new Error("La IA no detectó ítems procesables en esta factura.");
-        }
-
-        // 3. Loop Asíncrono (Parallel Processing)
         const linePromises = lines.map(async (line) => {
             const strategy = STRATEGIES[line.strategy];
-            
-            if (!strategy) {
-                console.warn(`⚠️ [STRATEGY_NOT_FOUND]: ${line.strategy} en la línea: ${line.description}`);
-                return { 
-                    success: false, 
-                    error: "Strategy not supported", 
-                    description: line.description 
-                };
-            }
-
-            const parameters = buildClimatiqParameters(strategy, line);
-            if (!parameters) {
-                return { success: false, error: "Invalid parameters mapping", description: line.description };
-            }
+            if (!strategy) return { success: false, error: "No Strategy", desc: line.description };
 
             try {
-                // Petición atómica a Climatiq
                 const res = await fetch(`${BASE_URL}/estimate`, {
                     method: "POST",
                     headers: { 
@@ -84,60 +37,51 @@ async function calculateInClimatiq(ocrSummary, queryHints = {}) {
                     },
                     body: JSON.stringify({
                         data_version: DATA_VERSION || "^1",
-                        emission_factor: { 
-                            activity_id: strategy.activity_id, 
-                            region: line.region || "GB" 
-                        },
-                        parameters
+                        emission_factor: { activity_id: strategy.activity_id },
+                        parameters: buildClimatiqParameters(strategy, line)
                     })
                 });
 
                 const data = await res.json();
-
+                
+                // 2. Log de seguridad para ver qué responde Climatiq realmente
                 if (!res.ok) {
-                    return { 
-                        success: false, 
-                        error: data.message || "Climatiq Error", 
-                        description: line.description 
-                    };
+                    console.error(`❌ [CLIMATIQ_API_REJECTED]: ${data.message}`);
+                    return { success: false, error: data.message, desc: line.description };
                 }
 
                 return {
                     success: true,
-                    co2e: data.co2e,
+                    co2e: data.co2e || 0,
                     unit: data.co2e_unit,
                     strategy: line.strategy,
-                    description: line.description,
-                    activity_id: strategy.activity_id
+                    description: line.description
                 };
-
-            } catch (err) {
-                return { success: false, error: err.message, description: line.description };
+            } catch (e) {
+                return { success: false, error: e.message };
             }
         });
 
-        // 4. Esperamos todos los resultados simultáneamente
         const results = await Promise.all(linePromises);
 
-        // 5. Consolidación Final
-        const successfulOnes = results.filter(r => r.success);
+        // 3. PROTECCIÓN FINAL DEL REDUCE:
+        // Filtramos para asegurar que el objeto tenga la propiedad 'co2e' y sea exitoso
+        const successfulOnes = results.filter(r => r && r.success && typeof r.co2e === 'number');
 
         return {
             total_co2e: successfulOnes.reduce((acc, curr) => acc + curr.co2e, 0),
-            items: results, // Enviamos éxitos y fallos para que la DB guarde el log completo
+            items: results, 
             invoice_metadata: {
-                vendor: extractedData.vendor,
-                invoice_no: extractedData.invoice_number,
-                invoice_date: extractedData.invoice_date,
-                billing_period: extractedData.billing_period,
-                total_amount_net: extractedData.total_amount_net,
-                currency: extractedData.currency
+                vendor: meta.vendor?.name || "Unknown",
+                invoice_no: meta.invoice_number || "N/A",
+                invoice_date: meta.invoice_date || new Date().toISOString(),
+                total_amount_net: meta.total_amount_net || 0,
+                currency: meta.currency || "EUR"
             }
         };
 
     } catch (err) {
         console.error("❌ [FATAL_LOOP_ERROR]:", err.message);
-        // Retornamos null para que el index.js sepa que debe marcar la factura como ERROR o PENDING
         return null;
     }
 }
