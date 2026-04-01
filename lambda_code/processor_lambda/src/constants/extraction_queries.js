@@ -1,18 +1,19 @@
 const BASE_QUERIES = [
     // --- AUDITORÍA FINANCIERA Y FISCAL ---
-    { Text: "What is the vendor name or issuer?", Alias: "VENDOR_NAME" },
-    { Text: "What is the vendor's NIF, CIF or tax ID?", Alias: "VENDOR_TAX_ID" },
-    { Text: "What is the customer's NIF or tax ID?", Alias: "CUSTOMER_NIF" },
-    { Text: "What is the invoice number?", Alias: "INVOICE_ID" },
-    { Text: "What is the total amount to pay with taxes?", Alias: "TOTAL_AMOUNT" },
-    { Text: "What is the net amount or taxable base?", Alias: "NET_AMOUNT" },
-    { Text: "What is the currency code or symbol?", Alias: "CURRENCY" },
+    { Text: "What is the company name (e.g., ELEIA)?", Alias: "VENDOR_NAME" },
+    { Text: "What is the CIF or NIF of the vendor (issuer)?", Alias: "VENDOR_TAX_ID" },
+    { Text: "What is the NIF/DNI of the customer (client)?", Alias: "CUSTOMER_NIF" },
+    { Text: "What is the N° de Factura?", Alias: "INVOICE_ID" },
+    { Text: "What is the value for Total factura?", Alias: "TOTAL_AMOUNT" },
+    { Text: "What is the base imponible or net amount?", Alias: "NET_AMOUNT" },
+    { Text: "What is the currency symbol (e.g., €)?", Alias: "CURRENCY" },
+
     // --- TEMPORALIDAD Y GEOGRAFÍA ---
-    { Text: "What is the invoice emission date?", Alias: "INVOICE_DATE" },
-    { Text: "What is the billing period start date?", Alias: "PERIOD_START" },
-    { Text: "What is the billing period end date?", Alias: "PERIOD_END" },
-    { Text: "What is the postal code of the supply address?", Alias: "POSTAL_CODE" },
-    { Text: "What is the country?", Alias: "COUNTRY" }
+    { Text: "What is the Fecha de Emision?", Alias: "INVOICE_DATE" },
+    { Text: "What is the billing start date after 'Del'?", Alias: "PERIOD_START" },
+    { Text: "What is the billing end date after 'al'?", Alias: "PERIOD_END" },
+    { Text: "What is the 5-digit postal code (CP)?", Alias: "POSTAL_CODE" },
+    { Text: "What is the country name?", Alias: "COUNTRY" }
 ];
 
 export const QUERIES_BY_CATEGORY = {
