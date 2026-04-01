@@ -1,20 +1,20 @@
 const BASE_QUERIES = [
-    // --- IDENTIFICACIÓN FISCAL (VENDOR & CUSTOMER) ---
+    // --- IDENTIFICACION FISCAL ---
     { Text: "Nombre legal empresa emisora vendedora", Alias: "VENDOR_NAME" },
     { Text: "CIF NIF emisor vendedor", Alias: "VENDOR_TAX_ID" },
     { Text: "CIF NIF DNI cliente receptor", Alias: "CUSTOMER_NIF" },
     { Text: "Nombre o razon social del cliente", Alias: "CUSTOMER_NAME" },
     { Text: "Direccion completa del suministro o cliente", Alias: "ADDRESS" },
 
-    // --- DATOS DE LA TRANSACCIÓN ---
+    // --- DATOS DE LA TRANSACCION ---
     { Text: "Numero de factura serie", Alias: "INVOICE_ID" },
     { Text: "Importe total factura", Alias: "TOTAL_AMOUNT" },
     { Text: "Base imponible importe neto", Alias: "NET_AMOUNT" },
-    { Text: "Importe total IVA o taxes", Alias: "TAX_AMOUNT" },
+    { Text: "Importe total IVA o impuestos", Alias: "TAX_AMOUNT" },
     { Text: "Simbolo moneda Euro", Alias: "CURRENCY" },
     { Text: "Metodo de pago o IBAN", Alias: "PAYMENT_METHOD" },
 
-    // --- TEMPORALIDAD Y GEOGRAFÍA ---
+    // --- TEMPORALIDAD Y GEOGRAFIA ---
     { Text: "Fecha emision factura", Alias: "INVOICE_DATE" },
     { Text: "Fecha inicio periodo despues de Del", Alias: "PERIOD_START" },
     { Text: "Fecha fin periodo despues de al", Alias: "PERIOD_END" },
@@ -48,7 +48,7 @@ export const QUERIES_BY_CATEGORY = {
         { Text: "Tipo residuo papel plastico organico", Alias: "WASTE_TYPE" },
         { Text: "Peso neto kg toneladas", Alias: "VALUE" },
         { Text: "Metodo tratamiento reciclaje vertedero incineracion", Alias: "TREATMENT_METHOD" },
-        { Text: "Codigo LER residuo", Alias: "LER_CODE" } // Código de Lista Europea de Residuos
+        { Text: "Codigo LER residuo", Alias: "LER_CODE" }
     ],
     LOGISTICS: [
         ...BASE_QUERIES,
