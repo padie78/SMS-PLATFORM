@@ -1,7 +1,7 @@
 // 1. Importaciones con sintaxis ESM
 import { extractText } from "./services/textract.js";
 import bedrock from "./services/bedrock.js";
-import climatiq from "./services/climatiq.js";
+import { calculateFootprint } from "./services/climatiq.js";
 import mapper from "./utils/mapper.js";
 import db from "./services/db.js";
 import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
@@ -35,7 +35,7 @@ export const handler = async (event, context) => {
         const emissionLines = aiAnalysis.emission_lines || [];
         console.log(`   [3/5] [CLIMATIQ_START]: Calculando CO2 para ${emissionLines.length} líneas...`);
         
-        const emissionCalculations = await climatiq.calculateEmissions(
+        const emissionCalculations = await calculateFootprint(
             emissionLines, 
             aiAnalysis.extracted_data?.location?.country || "ES"
         );
