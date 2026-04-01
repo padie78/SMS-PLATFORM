@@ -1,6 +1,7 @@
 {
   "name": "sms-processor-lambda",
   "version": "1.0.0",
+  "type": "module",
   "description": "Procesamiento de facturas con Textract, Bedrock y API de emisiones",
   "main": "src/index.js",
   "engines": {
@@ -13,11 +14,5 @@
     "@aws-sdk/client-dynamodb": "^3.500.0",
     "@aws-sdk/lib-dynamodb": "^3.500.0",
     "axios": "^1.6.0"
-  },
-  "devDependencies": {
-    "aws-sdk-client-mock": "^3.0.0"
-  },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
   }
 }
