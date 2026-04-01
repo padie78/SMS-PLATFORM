@@ -3,7 +3,7 @@ import textract from "./services/textract.js";
 import classifier from "./services/classifier.js";
 import bedrock from "./services/bedrock.js";
 import climatiq from "./services/climatiq.js";
-import mapper from "./services/mapper.js";
+import mapper from "./utils/mapper.js";
 import db from "./services/db.js";
 
 // 2. Exportación nombrada para el handler de Lambda
