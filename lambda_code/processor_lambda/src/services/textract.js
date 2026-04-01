@@ -11,6 +11,13 @@ export const extractText = async (bucket, key, category = "OTHERS") => {
 
     const queries = QUERIES_BY_CATEGORY[category] || QUERIES_BY_CATEGORY.OTHERS;
 
+    // --- LOG DE SELECCIÓN DE ESTRATEGIA ---
+    console.log(`🎯 [STRATEGY_SELECTION]: Usando queries para la categoría [${category}]`);
+
+    if (!QUERIES_BY_CATEGORY[category]) {
+        console.warn(`⚠️  [CATEGORY_FALLBACK]: La categoría '${category}' no existe. Aplicando [OTHERS] por defecto.`);
+    }
+
     // --- DEBUG: QUERIES ENVIADAS ---
     console.log(`--- [DEBUG_SENT_QUERIES] ---`);
     console.table(queries.map(q => ({ Alias: q.Alias, Query: q.Text })));

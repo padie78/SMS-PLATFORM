@@ -7,7 +7,6 @@ const BASE_QUERIES = [
     { Text: "What is the total amount to pay with taxes?", Alias: "TOTAL_AMOUNT" },
     { Text: "What is the net amount or taxable base?", Alias: "NET_AMOUNT" },
     { Text: "What is the currency code or symbol?", Alias: "CURRENCY" },
-
     // --- TEMPORALIDAD Y GEOGRAFÍA ---
     { Text: "What is the invoice emission date?", Alias: "INVOICE_DATE" },
     { Text: "What is the billing period start date?", Alias: "PERIOD_START" },
@@ -19,10 +18,13 @@ const BASE_QUERIES = [
 export const QUERIES_BY_CATEGORY = {
     ELEC: [
         ...BASE_QUERIES,
-        { Text: "What is the CUPS or supply point ID?", Alias: "SUPPLY_ID" },
-        { Text: "What is the active energy consumption in kWh?", Alias: "VALUE" },
-        { Text: "What is the access tariff (e.g. 2.0TD)?", Alias: "TARIFF" },
-        { Text: "What is the meter number?", Alias: "METER_ID" }
+        { Text: "What is the invoice number or reference?", Alias: "INVOICE_ID" },
+        { Text: "What is the total amount to pay with currency symbol?", Alias: "TOTAL_AMOUNT" },
+        { Text: "What is the name of the energy company (issuer)?", Alias: "VENDOR_NAME" },
+        { Text: "What is the CIF or NIF of the issuer company?", Alias: "VENDOR_TAX_ID" },
+        { Text: "What is the consumption in kWh?", Alias: "KWH_CONSUMPTION" },
+        { Text: "What is the CUPS code?", Alias: "CUPS" },
+        { Text: "What is the invoice date?", Alias: "INVOICE_DATE" }
     ],
     GAS: [
         ...BASE_QUERIES,
@@ -73,7 +75,7 @@ export const QUERIES_BY_CATEGORY = {
         { Text: "Is it a one-way or round-trip ticket?", Alias: "TRIP_TYPE" }
     ],
     OTHERS: [
-        ...BASE_QUERIES
+        ...BASE_QUERIES,
     ]
 };
 
