@@ -1,69 +1,55 @@
-// 1. Importaciones con sintaxis ESM y extensiones .js obligatorias
-import textract from "./services/textract.js";
-import classifier from "./services/classifier.js";
+// 1. Importaciones con sintaxis ESM
+import { extractText } from "./services/textract.js";
 import bedrock from "./services/bedrock.js";
 import climatiq from "./services/climatiq.js";
 import mapper from "./utils/mapper.js";
 import db from "./services/db.js";
+import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 
-// 2. Exportación nombrada para el handler de Lambda
-export const handler = async (event, context) => { // Añadido 'context' como segundo parámetro
+const s3 = new S3Client({});
+
+// 2. Exportación del handler de Lambda
+export const handler = async (event, context) => {
     const startTime = Date.now();
     const record = event.Records[0];
     const bucket = record.s3.bucket.name;
     const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, " "));
-
-    // ID de correlación: context.awsRequestId ya viene definido por AWS Lambda
     const requestId = context.awsRequestId || Math.random().toString(36).substring(7);
 
-    console.log(`🚀 [PIPELINE_START] [ID:${requestId}]: Iniciando proceso para s3://${bucket}/${key}`);
+    console.log(`🚀 [PIPELINE_START] [ID:${requestId}]: Procesando s3://${bucket}/${key}`);
 
     try {
-        // --- FASE 1: CLASIFICACIÓN ---
-        console.log(`   [1/6] [CLASSIFY_START]: Extrayendo texto base para identificación...`);
-        const initialOcr = await textract.extractText(bucket, key, "OTHERS");
-        console.log(`🔍 [INITIAL_OCR] | Cat: OTHERS | Hits: ${Object.values(initialOcr.queryHints || {}).filter(v => v !== "NOT_FOUND" && v !== null).length}/${Object.keys(initialOcr.queryHints || {}).length} | Vendor: ${initialOcr.queryHints?.VENDOR_NAME || 'N/A'} | Total: ${initialOcr.queryHints?.TOTAL_AMOUNT || 'N/A'}`);
+        // --- FASE 1: EXTRACCIÓN OCR (NUEVO MODELO SIN QUERIES) ---
+        console.log(`   [1/5] [TEXTRACT_START]: Ejecutando OCR base...`);
+        const ocrData = await extractText(bucket, key);
+        console.log(`🔍 [OCR_DONE] | Caracteres extraídos: ${ocrData.rawText.length}`);
+
+        // --- FASE 2: ANÁLISIS INTELIGENTE (BEDROCK) ---
+        // Ahora Bedrock recibe el rawText y él mismo clasifica y extrae todo.
+        console.log(`   [2/5] [BEDROCK_START]: Clasificando y extrayendo datos con IA...`);
+        const aiAnalysis = await bedrock.analyzeInvoice(ocrData.rawText);
         
-        const category = await classifier.identifyCategory(initialOcr.rawText);
-        console.log(`   [1/6] [CLASSIFY_END]: Categoría resuelta -> ${category}`);
+        console.log(`🤖 [AI_DONE] | Cat: ${aiAnalysis.category} | Vendor: ${aiAnalysis.extracted_data?.vendor?.name || 'N/A'} | Total: ${aiAnalysis.extracted_data?.amounts?.total || 0} ${aiAnalysis.extracted_data?.amounts?.currency || ''}`);
 
-
-        // --- FASE 2: EXTRACCIÓN ESPECÍFICA ---
-        console.log(`   [2/6] [TEXTRACT_START]: Ejecutando Queries específicas para ${category}...`);
-        const fullOcr = await textract.extractText(bucket, key, category);
-        console.log(`🎯 [FULL_OCR_DONE] | Cat: ${category} | Conf: ${fullOcr.confidence?.toFixed(2)}% | Hits: ${Object.values(fullOcr.queryHints || {}).filter(v => v !== null).length}/${Object.keys(fullOcr.queryHints || {}).length} | CUPS: ${fullOcr.queryHints?.CUPS || 'N/A'} | Total: ${fullOcr.queryHints?.TOTAL_AMOUNT || 'N/A'}`);
-
-        const qCount = Object.keys(fullOcr.queryHints || {}).length;
-        console.log(`   [2/6] [TEXTRACT_END]: Extracción completada. Campos detectados: ${qCount}`);
-
-
-        // --- FASE 3: ANÁLISIS SEMÁNTICO (BEDROCK) ---
-        console.log(`   [3/6] [BEDROCK_START]: Validando coherencia y limpiando OCR...`);
-        const aiAnalysis = await bedrock.analyzeInvoice(fullOcr);
-        console.log(`🤖 [AI_ANALYSIS_DONE] | Status: ${aiAnalysis ? '✅' : '❌'} | Vendor_Final: ${aiAnalysis?.vendor_name || 'N/A'} | Total_Final: ${aiAnalysis?.total_amount || 0} ${aiAnalysis?.currency || ''} | kWh: ${aiAnalysis?.consumption_kwh || 0} | CUPS: ${aiAnalysis?.cups || 'N/A'}`);
-
-        const vendor = aiAnalysis.extracted_data.vendor.name || "Desconocido";
-        console.log(`   [3/6] [BEDROCK_END]: Auditoría IA lista. Proveedor detectado: ${vendor}`);
-
-
-        // --- FASE 4: CÁLCULO DE HUELLA (CLIMATIQ) ---
-        const lineCount = aiAnalysis.emission_lines?.length || 0;
-        console.log(`   [4/6] [CLIMATIQ_START]: Calculando CO2 para ${lineCount} líneas de emisión...`);
+        // --- FASE 3: CÁLCULO DE HUELLA (CLIMATIQ) ---
+        const emissionLines = aiAnalysis.emission_lines || [];
+        console.log(`   [3/5] [CLIMATIQ_START]: Calculando CO2 para ${emissionLines.length} líneas...`);
+        
         const emissionCalculations = await climatiq.calculateEmissions(
-            aiAnalysis.emission_lines, 
-            aiAnalysis.dims.country
+            emissionLines, 
+            aiAnalysis.extracted_data?.location?.country || "ES"
         );
-        console.log(`🌍 [CLIMATIQ_DONE] | Lines: ${emissionCalculations?.results?.length || 0} | Total_CO2e: ${emissionCalculations?.total_co2e?.toFixed(4)} kg | Region: ${aiAnalysis.dims.country} | Source: ${aiAnalysis.emission_lines[0]?.activity_id || 'N/A'}`);
+        
+        const totalCo2 = emissionCalculations.reduce((acc, curr) => acc + (curr.co2e || 0), 0);
+        console.log(`🌍 [CLIMATIQ_DONE] | Total_CO2e: ${totalCo2.toFixed(4)} kg`);
 
-        const totalCo2 = emissionCalculations.reduce((acc, curr) => acc + curr.co2e, 0);
-        console.log(`   [4/6] [CLIMATIQ_END]: Cálculo finalizado. Total: ${totalCo2.toFixed(4)} kgCO2e`);
-
-
-        // --- FASE 5: MAPEO DE DATOS ---
-        console.log(`   [5/6] [MAPPER_START]: Construyendo Golden Record para Single-Table Design...`);
-        // Recuperas los metadatos que vienen con el evento de S3
-        const s3Head = await s3.headObject({ Bucket: bucket, Key: key }).promise();
-        const organizationId = s3Head.Metadata['organization-id'] || 'UNKNOWN';
+        // --- FASE 4: MAPEO DE DATOS ---
+        console.log(`   [4/5] [MAPPER_START]: Construyendo Golden Record...`);
+        
+        // Obtener metadatos de S3 (OrganizationID)
+        const headCommand = new HeadObjectCommand({ Bucket: bucket, Key: key });
+        const s3Head = await s3.send(headCommand);
+        const organizationId = s3Head.Metadata?.['organization-id'] || 'UNKNOWN';
 
         const goldenRecord = mapper.buildGoldenRecord(
             `ORG#${organizationId}`, 
@@ -72,26 +58,23 @@ export const handler = async (event, context) => { // Añadido 'context' como se
             emissionCalculations
         );
 
-        console.log(`💾 [GOLDEN_RECORD_CREATED] | PK: ${goldenRecord.PK} | SK: ${goldenRecord.SK} | CO2e: ${goldenRecord.total_co2e} kg | Status: READY_FOR_DYNAMO`);
-        console.log(`   [5/6] [MAPPER_END]: Mapeo exitoso. SK generado: ${goldenRecord.SK}`);
+        console.log(`💾 [MAPPER_DONE] | SK: ${goldenRecord.SK} | Status: READY`);
 
-
-        // --- FASE 6: PERSISTENCIA ---
-        console.log(`   [6/6] [DB_START]: Intentando persistencia transaccional en DynamoDB...`);
+        // --- FASE 5: PERSISTENCIA ---
+        console.log(`   [5/5] [DB_START]: Guardando en DynamoDB...`);
         const dbResult = await db.persistTransaction(goldenRecord);
-        console.log(`💾 [DB_PERSISTED] | PK: ${goldenRecord.PK} | SK: ${goldenRecord.SK} | Status: ${dbResult ? '✅ SUCCESS' : '❌ FAILED'} | Latency: ${dbResult?.ConsumedCapacity?.CapacityUnits || 'N/A'} RCU/WCU`);
-
+        
         const duration = (Date.now() - startTime) / 1000;
-
-        if (dbResult?.skipped) {
-            console.log(`⚠️ [PIPELINE_END] [ID:${requestId}]: Finalizado (Duplicado omitido) en ${duration}s.`);
-        } else {
-            console.log(`✅ [PIPELINE_END] [ID:${requestId}]: Proceso exitoso en ${duration}s.`);
-        }
+        console.log(`✅ [PIPELINE_END] [ID:${requestId}]: Éxito en ${duration}s.`);
 
         return {
             statusCode: 200,
-            body: JSON.stringify({ message: "Success", sk: goldenRecord.SK, duration: `${duration}s` })
+            body: JSON.stringify({ 
+                message: "Success", 
+                category: aiAnalysis.category,
+                sk: goldenRecord.SK, 
+                duration: `${duration}s` 
+            })
         };
 
     } catch (error) {
@@ -100,10 +83,7 @@ export const handler = async (event, context) => { // Añadido 'context' como se
         
         return {
             statusCode: 500,
-            body: JSON.stringify({ 
-                error: error.message,
-                requestId: requestId
-            })
+            body: JSON.stringify({ error: error.message, requestId })
         };
     }
 };
