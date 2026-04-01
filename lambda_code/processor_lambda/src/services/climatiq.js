@@ -41,10 +41,12 @@ export const calculateFootprint = async (lines, country = "ES") => {
                 };
             }
 
+            const token = "2E44QNZJMX5X5B6EM43E88KRZ8";
+
             const res = await fetch("https://api.climatiq.io/data/v1/estimate", {
                 method: "POST",
                 headers: { 
-                    "Authorization": `Bearer ${process.env.CLIMATIQ_API_KEY}`,
+                    "Authorization": `Bearer ${token?.trim()}`, // .trim() por seguridad
                     "Content-Type": "application/json" 
                 },
                 body: JSON.stringify(body)
