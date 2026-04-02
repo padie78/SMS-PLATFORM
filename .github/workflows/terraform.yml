@@ -1,11 +1,11 @@
 name: Terraform CI/CD
 
 on:
-  workflow_dispatch: # <--- ESTO permite el botón "Run workflow" en GitHub Actions
-  # Comentamos los automáticos para que no te sorprendan
-  # push:
-  #   branches:
-  #     - main
+  #workflow_dispatch: # <--- ESTO permite el botón "Run workflow" en GitHub Actions
+  #Comentamos los automáticos para que no te sorprendan
+  push:
+    branches:
+      - main
 
 jobs:
   terraform:
