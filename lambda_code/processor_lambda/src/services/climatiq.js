@@ -35,8 +35,7 @@ export const calculateFootprint = async (lines, country = "ES") => {
             const body = {
                 data_version: DATA_VERSION,
                 emission_factor: { 
-                    activity_id: realActivityId,
-                    region: country 
+                    activity_id: realActivityId
                 },
                 parameters: cleanParameters
             };
