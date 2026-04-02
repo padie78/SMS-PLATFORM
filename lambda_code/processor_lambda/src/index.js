@@ -1,7 +1,7 @@
 import { extractText } from "./services/textract.js";
 import bedrock from "./services/bedrock.js";
 import { calculateFootprint } from "./services/climatiq.js";
-import mapper from "./utils/mapper.js";
+import { buildGoldenRecord } from "./utils/mapper.js";
 import db from "./services/db.js";
 import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 
@@ -41,7 +41,7 @@ export const handler = async (event, context) => {
         const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
         const orgId = head.Metadata?.['organization-id'] || 'GENERIC_ORG';
 
-        const goldenRecord = mapper.buildGoldenRecord(
+        const goldenRecord = buildGoldenRecord(
             `ORG#${orgId}`, 
             key,
             aiAnalysis,
