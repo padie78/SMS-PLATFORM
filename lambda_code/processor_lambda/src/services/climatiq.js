@@ -11,8 +11,11 @@ export const calculateFootprint = async (lines, country = "ES") => {
     for (const [index, line] of lines.entries()) {
         try {
             // --- 1. MAPEADO DE ACTIVITY_ID ---
-            // Buscamos en el catálogo usando la categoría que envió la IA (ej: ELEC, GAS, etc.)
-            const strategy = STRATEGIES[line.category] || STRATEGIES.ELEC; 
+            console.log(`      📝 [DEBUG_LINEA_RECIBIDA_${index+1}]:`, JSON.stringify(line));
+
+            const rawCategory = line.category || "ELEC"; // Fallback por si acaso
+            const strategy = STRATEGIES[rawCategory.toUpperCase()] || STRATEGIES.ELEC;
+
             const realActivityId = strategy.activity_id;
 
             console.log(`      🔍 [MAPPER]: Categoría '${line.category}' -> ID: ${realActivityId}`);
