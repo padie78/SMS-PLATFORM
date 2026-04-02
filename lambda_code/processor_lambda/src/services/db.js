@@ -53,21 +53,23 @@ export const persistTransaction = async (record) => {
 
     try {
         await ddb.send(new TransactWriteCommand(params));
+        console.log(`✅ [DB_SUCCESS]: ${SK} y ${statsSK} actualizados.`);
         return { success: true };
     } catch (error) {
         if (error.name === "TransactionCanceledException") {
             const reasons = error.CancellationReasons;
             
-            // Si el error es que la ruta no existe (ValidationError), inicializamos con PUT
+            // Si falla por ruta inexistente, forzamos creación del registro STATS
             if (reasons?.[1]?.Code === "ValidationError" || error.message?.includes("document path")) {
                 return await forceInitialStats(params, record);
             }
 
             if (reasons?.[0]?.Code === "ConditionalCheckFailed") {
-                console.warn(`⚠️ [DB_DUPLICATE]: Factura ya procesada.`);
+                console.warn(`⚠️ [DB_DUPLICATE]: El archivo ya fue procesado.`);
                 return { skipped: true };
             }
         }
+        console.error(`❌ [DB_ERROR]:`, error.message);
         throw error;
     }
 };
@@ -79,9 +81,6 @@ async function forceInitialStats(originalParams, record) {
     const service = ai_analysis.service_type || "unknown";
     const statsSK = `STATS#${year}`;
 
-    console.log(`🔧 [DB_FIRST_RUN]: Creando registro inicial STATS#${year}`);
-
-    // Creamos el objeto STATS desde cero con la primera factura
     const initialStats = {
         PK,
         SK: statsSK,
@@ -108,9 +107,10 @@ async function forceInitialStats(originalParams, record) {
                 { Put: { TableName: TABLE_NAME, Item: initialStats } }
             ]
         }));
+        console.log(`✨ [DB_INIT]: Registro STATS#${year} creado satisfactoriamente.`);
         return { success: true };
     } catch (e) {
-        console.error("❌ [DB_FATAL]: Error en inicialización forzada", e.message);
+        console.error("❌ [DB_FATAL]: Fallo crítico inicializando STATS", e.message);
         throw e;
     }
 }
