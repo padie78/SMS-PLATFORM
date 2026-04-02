@@ -126,3 +126,5 @@ async function updateDetailedStats(PK, SK, month, service, co2, spend) {
         console.error("Error actualizando detalle de stats", e);
     }
 }
+
+export default { persistTransaction };
