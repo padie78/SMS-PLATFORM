@@ -4,6 +4,7 @@ export const calculateFootprint = async (lines, country = "ES") => {
     let totalKg = 0;
     const items = [];
     const CLIMATIQ_TOKEN = "2E44QNZJMX5X5B6EM43E88KRZ8";
+    const DATA_VERSION = "32.32"; 
 
     for (const [index, line] of lines.entries()) {
         try {
@@ -11,21 +12,26 @@ export const calculateFootprint = async (lines, country = "ES") => {
             const value = parseFloat(line.value);
             const unit = line.unit?.toLowerCase() === 'kwh' ? 'kWh' : (line.unit || 'kg');
 
-            // Construcción del body siguiendo estrictamente el esquema /estimate
+            // --- CONSTRUCCIÓN DEL PAYLOAD ---
+            // Eliminamos data_version de aquí para evitar el error de la columna 117
             const body = {
-                data_version: "32.32",
                 emission_factor: {
                     activity_id: strategy.activity_id,
-                    region: country
+                    region: country || "ES"
                 },
                 parameters: {
-                    ...(unit === 'kWh' ? { energy: value, energy_unit: 'kWh' } : { weight: value, weight_unit: unit })
+                    ...(unit === 'kWh' 
+                        ? { energy: value, energy_unit: 'kWh' } 
+                        : { weight: value, weight_unit: unit })
                 }
             };
 
+            // --- URL CON LA VERSIÓN EXPLÍCITA ---
+            const url = `https://api.climatiq.io/data/v1/estimate?data_version=${DATA_VERSION}`;
+
             console.log(`      📤 [PAYLOAD_ENVÍO_${index + 1}]:`, JSON.stringify(body));
 
-            const res = await fetch("https://api.climatiq.io/data/v1/estimate", {
+            const res = await fetch(url, {
                 method: "POST",
                 headers: { 
                     "Authorization": `Bearer ${CLIMATIQ_TOKEN.trim()}`,
@@ -37,17 +43,19 @@ export const calculateFootprint = async (lines, country = "ES") => {
             const data = await res.json();
 
             if (!res.ok) {
-                console.error(`      ❌ [API_ERROR]: ${data.message}`);
+                // Si falla, el log nos dirá EXACTAMENTE qué falta en el selector
+                console.error(`      ❌ [API_ERROR_L${index+1}]: ${data.message} (ID: ${data.request_id})`);
                 continue;
             }
 
-            totalKg += data.co2e;
-            console.log(`      ✅ [OK]: ${data.co2e} kgCO2e`);
+            const co2 = data.co2e || 0;
+            console.log(`      ✅ [OK_L${index+1}]: ${co2.toFixed(4)} kgCO2e`);
 
-            items.push({ ...line, co2e_kg: data.co2e });
+            totalKg += co2;
+            items.push({ ...line, co2e_kg: co2 });
 
         } catch (error) {
-            console.error(`      🚨 [LINE_ERROR]:`, error.message);
+            console.error(`      🚨 [LINE_ERROR_L${index+1}]:`, error.message);
         }
     }
 
