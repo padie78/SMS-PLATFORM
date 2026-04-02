@@ -40,7 +40,7 @@ export const buildSystemPrompt = (category) => {
             invoice_date: "YYYY-MM-DD",
             billing_period: { start: "YYYY-MM-DD", end: "YYYY-MM-DD" },
             currency: "ISO_4217",
-            amounts: { total_with_tax: "float", net: "float" }
+            total_amount: { total_with_tax: "float", net: "float" }
         },
         analytics_metadata: getAnalyticsMetadataSchema(category, rule),
         emission_lines: [

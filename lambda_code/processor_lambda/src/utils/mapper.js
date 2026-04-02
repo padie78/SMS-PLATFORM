@@ -11,8 +11,8 @@ export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
     const shortHash = fileHash.substring(0, 8);
     const SK = `INV#${invoiceDate}#${shortHash}`;
 
-    // Sanitización de montos (amounts.total según el log)
-    const rawAmount = aiData.extracted_data?.invoice?.amounts?.total || 0;
+    // Sanitización de montos (total_amount.total según el log)
+    const rawAmount = aiData.extracted_data?.invoice?.total_amount?.total || 0;
     const cleanAmount = typeof rawAmount === 'string' 
         ? parseFloat(rawAmount.replace(/[^0-9.,]/g, '').replace(',', '.')) 
         : Number(rawAmount);

@@ -44,7 +44,7 @@ For each consumption line found, you MUST include a "category" field that matche
   "extracted_data": {
     "vendor": { "name": "string", "tax_id": "string" },
     "invoice": { "number": "string", "date": "YYYY-MM-DD" },
-    "amounts": { "total": "float", "currency": "ISO_4217" },
+    "total_amount": { "total": "float", "currency": "ISO_4217" },
     "location": { "country": "ISO_2" }
   },
   "emission_lines": [
