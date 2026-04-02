@@ -1,4 +1,3 @@
-// 1. Importaciones con sintaxis ESM
 import { extractText } from "./services/textract.js";
 import bedrock from "./services/bedrock.js";
 import { calculateFootprint } from "./services/climatiq.js";
@@ -8,84 +7,54 @@ import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 
 const s3 = new S3Client({});
 
-// 2. Exportación del handler de Lambda
 export const handler = async (event, context) => {
     const startTime = Date.now();
     const record = event.Records[0];
     const bucket = record.s3.bucket.name;
     const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, " "));
-    const requestId = context.awsRequestId || Math.random().toString(36).substring(7);
-
-    console.log(`🚀 [PIPELINE_START] [ID:${requestId}]: Procesando s3://${bucket}/${key}`);
+    const requestId = context.awsRequestId;
 
     try {
-        // --- FASE 1: EXTRACCIÓN OCR (NUEVO MODELO SIN QUERIES) ---
-        console.log(`   [1/5] [TEXTRACT_START]: Ejecutando OCR base...`);
+        // --- FASE 1: OCR ---
         const ocrData = await extractText(bucket, key);
-        console.log(`🔍 [OCR_DONE] | Caracteres extraídos: ${ocrData.rawText.length}`);
 
-        // --- FASE 2: ANÁLISIS INTELIGENTE (BEDROCK) ---
-        // Ahora Bedrock recibe el rawText y él mismo clasifica y extrae todo.
-        console.log(`   [2/5] [BEDROCK_START]: Clasificando y extrayendo datos con IA...`);
+        // --- FASE 2: IA ANALYSIS ---
         const aiAnalysis = await bedrock.analyzeInvoice(ocrData.rawText);
         
-        console.log(`🤖 [AI_DONE] | Cat: ${aiAnalysis.category} | Vendor: ${aiAnalysis.extracted_data?.vendor?.name || 'N/A'} | Total: ${aiAnalysis.extracted_data?.amounts?.total || 0} ${aiAnalysis.extracted_data?.amounts?.currency || ''}`);
+        // --- FASE 3: CLIMATIQ CALCULATION ---
+        // Inyectamos categoría global en las líneas si Bedrock la omitió
+        const emissionLines = (aiAnalysis.emission_lines || []).map(line => ({
+            ...line,
+            category: line.category || aiAnalysis.category || "ELEC"
+        }));
 
-        console.log("   [DEBUG_BEDROCK_LINES]:", JSON.stringify(aiAnalysis.emission_lines, null, 2));
+        const country = aiAnalysis.extracted_data?.location?.country || "ES";
+        const emissionCalculations = await calculateFootprint(emissionLines, country);
+        
+        // Extraemos los valores del objeto retornado
+        const totalCO2 = emissionCalculations.total_kg; 
+        const resultsArray = emissionCalculations.items; // <-- Tu desglose para auditoría
 
-        // --- FASE 3: CÁLCULO DE HUELLA (CLIMATIQ) ---
-        const emissionLines = aiAnalysis.emission_lines || [];
-        console.log(`   [3/5] [CLIMATIQ_START]: Calculando CO2 para ${emissionLines.length} líneas...`);
-        
-        const emissionCalculations = await calculateFootprint(
-            emissionLines, 
-            "GB"
-        );
-        
-        const totalCo2 = emissionCalculations.reduce((acc, curr) => acc + (curr.co2e || 0), 0);
-        console.log(`🌍 [CLIMATIQ_DONE] | Total_CO2e: ${totalCo2.toFixed(4)} kg`);
+        console.log(`🌍 [CLIMATIQ_DONE] | Total: ${totalCO2.toFixed(2)} kgCO2e | Líneas: ${resultsArray.length}`);
 
-        // --- FASE 4: MAPEO DE DATOS ---
-        console.log(`   [4/5] [MAPPER_START]: Construyendo Golden Record...`);
-        
-        // Obtener metadatos de S3 (OrganizationID)
-        const headCommand = new HeadObjectCommand({ Bucket: bucket, Key: key });
-        const s3Head = await s3.send(headCommand);
-        const organizationId = s3Head.Metadata?.['organization-id'] || 'UNKNOWN';
+        // --- FASE 4: GOLDEN RECORD (MAPPER) ---
+        const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        const orgId = head.Metadata?.['organization-id'] || 'GENERIC_ORG';
 
         const goldenRecord = mapper.buildGoldenRecord(
-            `ORG#${organizationId}`, 
+            `ORG#${orgId}`, 
             key,
             aiAnalysis,
-            emissionCalculations
+            emissionCalculations // Pasamos el objeto completo (total + items)
         );
 
-        console.log(`💾 [MAPPER_DONE] | SK: ${goldenRecord.SK} | Status: READY`);
-
-        // --- FASE 5: PERSISTENCIA ---
-        console.log(`   [5/5] [DB_START]: Guardando en DynamoDB...`);
-        const dbResult = await db.persistTransaction(goldenRecord);
+        // --- FASE 5: DYNAMODB ---
+        await db.persistTransaction(goldenRecord);
         
-        const duration = (Date.now() - startTime) / 1000;
-        console.log(`✅ [PIPELINE_END] [ID:${requestId}]: Éxito en ${duration}s.`);
-
-        return {
-            statusCode: 200,
-            body: JSON.stringify({ 
-                message: "Success", 
-                category: aiAnalysis.category,
-                sk: goldenRecord.SK, 
-                duration: `${duration}s` 
-            })
-        };
+        return { statusCode: 200, body: JSON.stringify({ status: "SUCCESS", id: goldenRecord.SK }) };
 
     } catch (error) {
-        const totalDuration = (Date.now() - startTime) / 1000;
-        console.error(`❌ [PIPELINE_CRITICAL_FAILURE] [ID:${requestId}] tras ${totalDuration}s:`, error);
-        
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ error: error.message, requestId })
-        };
+        console.error(`❌ [CRITICAL_FAILURE]:`, error);
+        return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
     }
 };

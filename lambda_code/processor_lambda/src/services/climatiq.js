@@ -3,64 +3,54 @@ import { STRATEGIES } from "../constants/climatiq_catalog.js";
 export const calculateFootprint = async (lines, country = "ES") => {
     let totalKg = 0;
     const items = [];
-    const CLIMATIQ_TOKEN = "2E44QNZJMX5X5B6EM43E88KRZ8";
+    const CLIMATIQ_TOKEN = process.env.CLIMATIQ_API_KEY; // Recomendado usar env var
     const DATA_VERSION = "32.32"; 
 
-    for (const [index, line] of lines.entries()) {
+    for (const line of lines) {
         try {
             const strategy = STRATEGIES[line.category?.toUpperCase()] || STRATEGIES.ELEC;
             const value = parseFloat(line.value);
             const unit = line.unit?.toLowerCase() === 'kwh' ? 'kWh' : (line.unit || 'kg');
 
-            // --- CONSTRUCCIÓN DEL PAYLOAD ---
-            // Eliminamos data_version de aquí para evitar el error de la columna 117
-           const body = {
-    // 1. EL SELECTOR (Quién emite)
-    "emission_factor": {
-        "activity_id": strategy.activity_id,
-        "region": country || "ES",
-        "data_version": "^3" // O "32.32", según prefieras fijarlo
-    },
-    // 2. LOS PARÁMETROS (Cuánto emite) - ESTO ES LO QUE FALTA
-    "parameters": {
-        ...(unit === 'kWh' 
-            ? { "energy": value, "energy_unit": "kWh" } 
-            : { "weight": value, "weight_unit": unit })
-    }
-};
+            const body = {
+                emission_factor: {
+                    activity_id: strategy.activity_id,
+                    region: country,
+                    data_version: "^3" // Selector dinámico
+                },
+                parameters: {
+                    ...(unit === 'kWh' 
+                        ? { energy: value, energy_unit: "kWh" } 
+                        : { weight: value, weight_unit: unit })
+                }
+            };
 
-            // --- URL CON LA VERSIÓN EXPLÍCITA ---
-            const url = `https://api.climatiq.io/data/v1/estimate?data_version=${DATA_VERSION}`;
-
-            console.log(`      📤 [PAYLOAD_ENVÍO_${index + 1}]:`, JSON.stringify(body));
-
-            const res = await fetch(url, {
+            const res = await fetch("https://api.climatiq.io/data/v1/estimate", {
                 method: "POST",
                 headers: { 
-                    "Authorization": `Bearer ${CLIMATIQ_TOKEN.trim()}`,
+                    "Authorization": `Bearer ${CLIMATIQ_TOKEN}`,
                     "Content-Type": "application/json" 
                 },
                 body: JSON.stringify(body)
             });
 
             const data = await res.json();
+            if (!res.ok) throw new Error(data.message);
 
-            if (!res.ok) {
-                // Si falla, el log nos dirá EXACTAMENTE qué falta en el selector
-                console.error(`      ❌ [API_ERROR_L${index+1}]: ${data.message} (ID: ${data.request_id})`);
-                continue;
-            }
+            totalKg += data.co2e;
+            items.push({
+                description: line.description,
+                original_value: value,
+                original_unit: unit,
+                co2e_kg: data.co2e,
+                activity_id: strategy.activity_id,
+                audit_trail: data.audit_trail // Guardamos la fuente del factor
+            });
 
-            const co2 = data.co2e || 0;
-            console.log(`      ✅ [OK_L${index+1}]: ${co2.toFixed(4)} kgCO2e`);
-
-            totalKg += co2;
-            items.push({ ...line, co2e_kg: co2 });
-
-        } catch (error) {
-            console.error(`      🚨 [LINE_ERROR_L${index+1}]:`, error.message);
+        } catch (err) {
+            console.error(`   ⚠️ [LINE_SKIP]: ${err.message}`);
         }
     }
 
-    return { total_tons: totalKg / 1000, total_kg: totalKg, items };
+    return { total_kg: totalKg, items };
 };
