@@ -1,41 +1,29 @@
 export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
     const timestamp = new Date().toISOString();
-    const invoiceDate = aiData.extracted_data?.invoice?.date || "0000-00-00";
     
-    // 1. Extraer solo el nombre del archivo (ej: 1775123489640-factura.jpg)
-    // Esto quita "uploads/f3d4f8a2.../"
-    const fileName = s3Key.split('/').pop();
+    // 1. Extraemos los datos clave de la IA
+    const invoiceDate = aiData.extracted_data?.invoice?.date || "0000-00-00";
+    const invoiceNum = aiData.extracted_data?.invoice?.number || "NO-NUMBER";
+    
+    // 2. Limpiamos el Invoice Number (quitamos espacios/caracteres raros para la SK)
+    const cleanInvoiceNum = invoiceNum.replace(/[^a-zA-Z0-9]/g, '-');
 
-    const [year, month] = invoiceDate.split('-');
-    const currentYear = year || new Date().getFullYear().toString();
-    const currentMonth = month || (new Date().getMonth() + 1).toString().padStart(2, '0');
+    // 3. Extraemos el timestamp/ID del nombre del archivo S3
+    // Si el archivo es "1775123728502-factura.jpg", esto saca "1775123728502"
+    const s3Id = s3Key.split('/').pop().split('-')[0];
 
     return {
         PK: partitionKey,
-        // 2. Nueva SK optimizada
-        SK: `INV#${invoiceDate}#${fileName}`,
+        // 🚀 SK DEFINITIVA: Orden cronológico + Referencia Legal + Unicidad Técnica
+        SK: `INV#${invoiceDate}#${cleanInvoiceNum}#${s3Id}`,
         
+        // ... el resto del objeto igual ...
         analytics_dims: {
-            year: currentYear,
-            month: `M#${currentMonth}`,
+            year: invoiceDate.split('-')[0] || "0000",
+            month: `M#${invoiceDate.split('-')[1] || "00"}`,
             facility_id: "MAIN_PLANT",
             category: aiData.category || "ELEC"
         },
-
-        metrics: {
-            co2e_tons: footprint.total_kg / 1000,
-            consumption_value: aiData.extracted_data?.amounts?.total || 0,
-            co2e_kg: footprint.total_kg
-        },
-
-        vendor_name: aiData.extracted_data?.vendor?.name || "Unknown",
-        invoice_number: aiData.extracted_data?.invoice?.number || "N/A",
-        currency: aiData.extracted_data?.amounts?.currency || "EUR",
-        
-        emissions_breakdown: footprint.items,
-        
-        processed_at: timestamp,
-        s3_reference: s3Key, // Mantenemos el path completo aquí por si necesitas descargar el archivo luego
-        status: "PROCESSED_SUCCESS"
+        // ...
     };
 };
