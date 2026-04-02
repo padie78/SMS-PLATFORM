@@ -14,15 +14,20 @@ export const calculateFootprint = async (lines, country = "ES") => {
 
             // --- CONSTRUCCIÓN DEL PAYLOAD ---
             // Eliminamos data_version de aquí para evitar el error de la columna 117
-            const body = {
-                "emission_factor": {
-                    "data_version": "^3",
-                    "activity_id": "electricity-supply_grid-source_production_mix",
-                    "source": "MfE",
-                    "region": "NZ",
-                    "year": 2020
-                }
-            };
+           const body = {
+    // 1. EL SELECTOR (Quién emite)
+    "emission_factor": {
+        "activity_id": strategy.activity_id,
+        "region": country || "ES",
+        "data_version": "^3" // O "32.32", según prefieras fijarlo
+    },
+    // 2. LOS PARÁMETROS (Cuánto emite) - ESTO ES LO QUE FALTA
+    "parameters": {
+        ...(unit === 'kWh' 
+            ? { "energy": value, "energy_unit": "kWh" } 
+            : { "weight": value, "weight_unit": unit })
+    }
+};
 
             // --- URL CON LA VERSIÓN EXPLÍCITA ---
             const url = `https://api.climatiq.io/data/v1/estimate?data_version=${DATA_VERSION}`;
