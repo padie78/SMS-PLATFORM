@@ -5,25 +5,41 @@ export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
     const invoiceDate = aiData.extracted_data?.invoice?.date || "0000-00-00";
     const invoiceNum = aiData.extracted_data?.invoice?.number || "NO-NUMBER";
     
-    // 2. Limpiamos el Invoice Number (quitamos espacios/caracteres raros para la SK)
+    // 2. Limpiamos el Invoice Number para la SK
     const cleanInvoiceNum = invoiceNum.replace(/[^a-zA-Z0-9]/g, '-');
 
-    // 3. Extraemos el timestamp/ID del nombre del archivo S3
-    // Si el archivo es "1775123728502-factura.jpg", esto saca "1775123728502"
+    // 3. Extraemos el ID del archivo de S3
     const s3Id = s3Key.split('/').pop().split('-')[0];
+
+    // 4. Extraemos año y mes para analíticas
+    const [year, month] = invoiceDate.split('-');
 
     return {
         PK: partitionKey,
-        // 🚀 SK DEFINITIVA: Orden cronológico + Referencia Legal + Unicidad Técnica
         SK: `INV#${invoiceDate}#${cleanInvoiceNum}#${s3Id}`,
         
-        // ... el resto del objeto igual ...
+        // --- ESTO ES LO QUE ESTABA FALTANDO Y CAUSABA EL ERROR ---
+        metrics: {
+            co2e_tons: (footprint.total_kg / 1000) || 0,
+            consumption_value: aiData.extracted_data?.amounts?.total || 0,
+            co2e_kg: footprint.total_kg || 0
+        },
+
         analytics_dims: {
-            year: invoiceDate.split('-')[0] || "0000",
-            month: `M#${invoiceDate.split('-')[1] || "00"}`,
+            year: year || "0000",
+            month: `M#${month || "00"}`,
             facility_id: "MAIN_PLANT",
             category: aiData.category || "ELEC"
         },
-        // ...
+
+        vendor_name: aiData.extracted_data?.vendor?.name || "Unknown",
+        invoice_number: invoiceNum,
+        currency: aiData.extracted_data?.amounts?.currency || "EUR",
+        
+        emissions_breakdown: footprint.items,
+        
+        processed_at: timestamp,
+        s3_reference: s3Key,
+        status: "PROCESSED_SUCCESS"
     };
 };
