@@ -1,53 +1,67 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 
-const client = new DynamoDBClient({ 
-    region: process.env.AWS_REGION || "eu-central-1" 
-});
-
-const ddb = DynamoDBDocumentClient.from(client, {
-    marshallOptions: {
-        removeUndefinedValues: true, 
-    }
-});
+const client = new DynamoDBClient({ region: process.env.AWS_REGION || "eu-central-1" });
+const ddb = DynamoDBDocumentClient.from(client, { marshallOptions: { removeUndefinedValues: true } });
 
 const TABLE_NAME = "sms-platform-dev-emissions";
 
 export const persistTransaction = async (record) => {
-    const { PK, SK, analytics_dims, metrics } = record;
+    const { PK, SK, analytics_dimensions, climatiq_result, extracted_data, ai_analysis, metadata } = record;
     
-    // SK para el registro de agregados (Anual/Instalación)
-    const statsSK = `STATS#${analytics_dims.year}#FACILITY#${analytics_dims.facility_id}`;
+    const year = analytics_dimensions.period_year;
+    const month = analytics_dimensions.period_month.toString().padStart(2, '0');
+    const service = ai_analysis.service_type || "unknown";
+    const statsSK = `STATS#${year}`;
 
-    console.log(`   [DB_PERSIST]: Ejecutando transacción en ${TABLE_NAME}`);
+    console.log(`   [DB_PERSIST]: Iniciando transacción atómica para ${SK}`);
 
     const params = {
         TransactItems: [
             {
-                // 1. Guardar el "Golden Record" de la factura
+                // 1. Guardar la factura (Golden Record)
                 Put: {
                     TableName: TABLE_NAME,
                     Item: record,
-                    ConditionExpression: "attribute_not_exists(SK)"
+                    ConditionExpression: "attribute_not_exists(SK)" // Evita duplicados por hash
                 }
             },
             {
-                // 2. Actualizar Estadísticas (Estructura plana para evitar errores de inicialización)
+                // 2. Actualizar el Agregador Anual (STATS)
                 Update: {
                     TableName: TABLE_NAME,
                     Key: { PK, SK: statsSK },
                     UpdateExpression: `
-                        SET total_co2e_ytd = if_not_exists(total_co2e_ytd, :zero) + :co2,
-                            total_cost_ytd = if_not_exists(total_cost_ytd, :zero) + :cost,
-                            count_invoices_ytd = if_not_exists(count_invoices_ytd, :zero) + :one,
-                            last_updated = :now
+                        SET 
+                            by_month = if_not_exists(by_month, :emptyMap),
+                            by_service = if_not_exists(by_service, :emptyMap),
+
+                            by_month.#m = if_not_exists(by_month.#m, :emptyMetrics),
+                            by_month.#m.co2 = if_not_exists(by_month.#m.co2, :zero) + :newCo2,
+                            by_month.#m.spend = if_not_exists(by_month.#m.spend, :zero) + :newSpend,
+                            
+                            by_service.#s = if_not_exists(by_service.#s, :zero) + :newCo2,
+
+                            total_co2e_kg = if_not_exists(total_co2e_kg, :zero) + :newCo2,
+                            total_spend = if_not_exists(total_spend, :zero) + :newSpend,
+                            invoice_count = if_not_exists(invoice_count, :zero) + :one,
+
+                            last_updated = :now,
+                            last_file_processed = :fileName
                     `,
+                    ExpressionAttributeNames: {
+                        "#m": month,
+                        "#s": service
+                    },
                     ExpressionAttributeValues: {
-                        ":co2": metrics.co2e_tons,
-                        ":cost": metrics.consumption_value,
+                        ":newCo2": Number(climatiq_result.co2e),
+                        ":newSpend": Number(extracted_data.total_amount),
                         ":one": 1,
                         ":zero": 0,
-                        ":now": new Date().toISOString()
+                        ":emptyMap": {},
+                        ":emptyMetrics": { co2: 0, spend: 0 },
+                        ":now": new Date().toISOString(),
+                        ":fileName": metadata.filename
                     }
                 }
             }
@@ -56,21 +70,17 @@ export const persistTransaction = async (record) => {
 
     try {
         await ddb.send(new TransactWriteCommand(params));
-        console.log(`   ✅ [DB_SUCCESS]: Registro y estadísticas actualizados.`);
+        console.log(`   ✅ [DB_SUCCESS]: Factura ${SK} y Stats#${year} sincronizados.`);
         return { success: true };
     } catch (error) {
         if (error.name === "TransactionCanceledException") {
             const reason = error.CancellationReasons?.[0]?.Code;
             if (reason === "ConditionalCheckFailed") {
-                console.warn(`⚠️ [DB_DUPLICATE]: La factura ya existe. SK: ${SK}`);
+                console.warn(`⚠️ [DB_DUPLICATE]: El archivo ${metadata.filename} ya fue procesado anteriormente.`);
                 return { skipped: true };
             }
-            console.error("❌ [DB_CANCELLED_REASON]:", JSON.stringify(error.CancellationReasons));
         }
-        
         console.error(`❌ [DB_ERROR]:`, error.message);
         throw error;
     }
 };
-
-export default { persistTransaction };
