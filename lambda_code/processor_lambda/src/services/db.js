@@ -19,7 +19,6 @@ export const persistTransaction = async (record) => {
     const params = {
         TransactItems: [
             {
-                // 1. Guardar la factura (Golden Record)
                 Put: {
                     TableName: TABLE_NAME,
                     Item: record,
@@ -27,7 +26,6 @@ export const persistTransaction = async (record) => {
                 }
             },
             {
-                // 2. Actualizar el Agregador Anual (STATS)
                 Update: {
                     TableName: TABLE_NAME,
                     Key: { PK, SK: statsSK },
@@ -35,19 +33,12 @@ export const persistTransaction = async (record) => {
                         SET 
                             by_month = if_not_exists(by_month, :emptyMap),
                             by_service = if_not_exists(by_service, :emptyMap),
-
-                            // Actualizamos los campos finales directamente para evitar Overlap Error
-                            // Si el mes (#m) no existe dentro de by_month, DynamoDB lo creará 
-                            // al asignar sus hijos, siempre que by_month esté inicializado.
                             by_month.#m.co2 = if_not_exists(by_month.#m.co2, :zero) + :newCo2,
                             by_month.#m.spend = if_not_exists(by_month.#m.spend, :zero) + :newSpend,
-                            
                             by_service.#s = if_not_exists(by_service.#s, :zero) + :newCo2,
-
                             total_co2e_kg = if_not_exists(total_co2e_kg, :zero) + :newCo2,
                             total_spend = if_not_exists(total_spend, :zero) + :newSpend,
                             invoice_count = if_not_exists(invoice_count, :zero) + :one,
-
                             last_updated = :now,
                             last_file_processed = :fileName
                     `,
@@ -75,9 +66,9 @@ export const persistTransaction = async (record) => {
         return { success: true };
     } catch (error) {
         if (error.name === "TransactionCanceledException") {
-            const reason = error.CancellationReasons?.[0]?.Code;
+            const reason = error.CancellationReasons?.[1]?.Code;
             if (reason === "ConditionalCheckFailed") {
-                console.warn(`⚠️ [DB_DUPLICATE]: El archivo ${metadata.filename} ya fue procesado anteriormente.`);
+                console.warn(`⚠️ [DB_DUPLICATE]: El archivo ${metadata.filename} ya existe.`);
                 return { skipped: true };
             }
         }
@@ -86,5 +77,4 @@ export const persistTransaction = async (record) => {
     }
 };
 
-// Exportación por defecto para evitar el error de "requested module does not provide an export named default"
 export default { persistTransaction };
