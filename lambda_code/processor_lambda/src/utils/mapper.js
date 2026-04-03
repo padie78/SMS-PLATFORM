@@ -16,7 +16,6 @@ export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
 
     // --- LÓGICA DE FILTRADO PARA EL CONSUMO ---
     const allLines = aiData.emission_lines || [];
-    
     const consumptionLines = allLines.filter(line => {
         const u = (line.unit || '').toLowerCase();
         return u === 'kwh' || u === 'm3' || u === 'kg' || u === 'l';
@@ -25,15 +24,15 @@ export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
     const totalValue = consumptionLines.reduce((acc, line) => acc + Number(line.value || 0), 0);
     const displayUnit = consumptionLines[0]?.unit || "kWh";
 
-    // --- LÓGICA DE CONFIANZA Y REVISIÓN (ACTUALIZADA) ---
-    // Usamos parseFloat para asegurar que tratamos con números decimales
+    // --- LÓGICA DE CONFIANZA Y REVISIÓN REFINADA ---
+    // Usamos parseFloat para manejar el "0.95" que ya nos devuelve Bedrock
     const confidence = parseFloat(aiData.confidence_score) || 0;
     
-    // Condición de revisión: 
-    // 1. Confianza IA < 0.8
-    // 2. O no hay consumo detectado (totalValue es 0)
-    // 3. O no se pudo extraer el periodo de facturación
-    const needsReview = confidence < 0.8 || totalValue === 0 || !invoice.period_start;
+    // Condición de revisión dinámica:
+    // Si confidence es 0.95, (0.95 < 0.8) es FALSE.
+    // Pero si totalValue es 0 o no hay fechas, será TRUE.
+    const hasDates = !!(invoice.period_start && invoice.period_end);
+    const needsReview = confidence < 0.8 || totalValue === 0 || !hasDates;
 
     // --- HUELLA Y GASES ---
     const gases = footprint.constituent_gases || {};
@@ -47,11 +46,14 @@ export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
         ai_analysis: {
             activity_id: footprint.activity_id || "electricity-supply_grid_es",
             calculation_method: "consumption_based",
-            confidence_score: confidence, // Ahora dinámico
+            confidence_score: confidence, 
+            
+            // Insight text dinámico para debuguear en DynamoDB
             insight_text: needsReview 
-                ? `Revisión requerida: ${confidence < 0.8 ? 'Baja confianza' : 'Datos incompletos'}.`
-                : aiData.analysis_summary || `Factura de ${vendor.name} procesada con éxito.`,
-            requires_review: needsReview, // Ahora dinámico basado en lógica de negocio
+                ? `Revisión: ${confidence < 0.8 ? 'Baja Confianza ('+confidence+')' : 'Datos Incompletos (Consumo o Fechas)'}`
+                : `Procesado Automático - Confianza: ${(confidence * 100).toFixed(0)}%`,
+
+            requires_review: needsReview, // <--- Aquí se envía el booleano final
             service_type: (aiData.category || "ELEC").toUpperCase(),
             unit: displayUnit,
             value: totalValue,
@@ -82,7 +84,6 @@ export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
 
         extracted_data: {
             billing_period: {
-                // Ahora mapeamos los nuevos campos del Prompt
                 start: invoice.period_start || null,
                 end: invoice.period_end || null
             },
