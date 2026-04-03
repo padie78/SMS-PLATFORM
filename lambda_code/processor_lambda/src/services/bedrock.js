@@ -43,7 +43,12 @@ For each consumption line found, you MUST include a "category" field that matche
   "category": "MAIN_CATEGORY_HERE",
   "extracted_data": {
     "vendor": { "name": "string", "tax_id": "string" },
-    "invoice": { "number": "string", "date": "YYYY-MM-DD" },
+    "invoice": { 
+        "number": "string", 
+        "date": "YYYY-MM-DD",
+        "period_start": "YYYY-MM-DD",
+        "period_end": "YYYY-MM-DD"
+    },
     "total_amount": { "total": "float", "currency": "ISO_4217" },
     "location": { "country": "ISO_2" }
   },
