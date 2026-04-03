@@ -16,17 +16,17 @@ export const persistTransaction = async (record) => {
     const service = (ai_analysis.service_type || "UNKNOWN").toUpperCase();
     const statsSK = `STATS#${year}`;
 
-    const newCo2 = Number(climatiq_result.co2e || 0);
-    const newSpend = Number(extracted_data.total_amount || 0);
-
-    // Definimos los nombres de las columnas planas
-    const monthCo2Key = `month_${month}_co2`;
-    const monthSpendKey = `month_${month}_spend`;
-    const serviceCo2Key = `service_${service}_co2`;
+    // 1. Extraemos todos los valores de gases del registro (vienen del nuevo Mapper)
+    const nCo2e = Number(climatiq_result.co2e || 0);
+    const nCo2  = Number(climatiq_result.co2 || 0);
+    const nCh4  = Number(climatiq_result.ch4 || 0);
+    const nN2o  = Number(climatiq_result.n2o || 0);
+    const nSpend = Number(extracted_data.total_amount || 0);
 
     const params = {
         TransactItems: [
             {
+                // INSERTAR TRANSACCIÓN (Idempotencia basada en SK Natural)
                 Put: {
                     TableName: TABLE_NAME,
                     Item: record,
@@ -34,28 +34,37 @@ export const persistTransaction = async (record) => {
                 }
             },
             {
+                // ACTUALIZAR ESTADÍSTICAS ANUALES (Estructura Plana)
                 Update: {
                     TableName: TABLE_NAME,
                     Key: { PK, SK: statsSK },
-                    // Estructura PLANA: Actualizamos todo en un solo paso atómico
                     UpdateExpression: `
-                        SET #mCo2 = if_not_exists(#mCo2, :zero) + :newCo2,
-                            #mSpend = if_not_exists(#mSpend, :zero) + :newSpend,
-                            #sCo2 = if_not_exists(#sCo2, :zero) + :newCo2,
-                            total_co2e_kg = if_not_exists(total_co2e_kg, :zero) + :newCo2,
-                            total_spend = if_not_exists(total_spend, :zero) + :newSpend,
+                        SET #mCo2e = if_not_exists(#mCo2e, :zero) + :nCo2e,
+                            #mCo2  = if_not_exists(#mCo2, :zero) + :nCo2,
+                            #mCh4  = if_not_exists(#mCh4, :zero) + :nCh4,
+                            #mN2o  = if_not_exists(#mN2o, :zero) + :nN2o,
+                            #mSpend = if_not_exists(#mSpend, :zero) + :nSpend,
+                            #sCo2e = if_not_exists(#sCo2e, :zero) + :nCo2e,
+                            total_co2e_kg = if_not_exists(total_co2e_kg, :zero) + :nCo2e,
+                            total_spend = if_not_exists(total_spend, :zero) + :nSpend,
                             invoice_count = if_not_exists(invoice_count, :zero) + :one,
                             last_updated = :now,
                             last_file_processed = :fileName
                     `,
                     ExpressionAttributeNames: { 
-                        "#mCo2": monthCo2Key,
-                        "#mSpend": monthSpendKey,
-                        "#sCo2": serviceCo2Key
+                        "#mCo2e": `month_${month}_co2e`,
+                        "#mCo2":  `month_${month}_co2`,
+                        "#mCh4":  `month_${month}_ch4`,
+                        "#mN2o":  `month_${month}_n2o`,
+                        "#mSpend": `month_${month}_spend`,
+                        "#sCo2e": `service_${service}_co2e`
                     },
                     ExpressionAttributeValues: {
-                        ":newCo2": newCo2,
-                        ":newSpend": newSpend,
+                        ":nCo2e": nCo2e,
+                        ":nCo2":  nCo2,
+                        ":nCh4":  nCh4,
+                        ":nN2o":  nN2o,
+                        ":nSpend": nSpend,
                         ":one": 1,
                         ":zero": 0,
                         ":now": new Date().toISOString(),
@@ -68,16 +77,13 @@ export const persistTransaction = async (record) => {
 
     try {
         await ddb.send(new TransactWriteCommand(params));
-        console.log(`✅ [DB_SUCCESS]: Transacción y Stats Planos actualizados.`);
+        console.log(`✅ [DB_SUCCESS]: Transacción guardada y Stats de gases actualizados.`);
         return { success: true };
     } catch (error) {
         if (error.name === "TransactionCanceledException") {
             const reasons = error.CancellationReasons;
-            
-            // Si el ítem de Stats no existe, DynamoDB lo crea automáticamente con el Update.
-            // Pero si por alguna razón falla el esquema, aquí manejamos el error.
             if (reasons?.[0]?.Code === "ConditionalCheckFailed") {
-                console.warn(`⚠️ [DB_DUPLICATE]: Factura ${record.SK} ya existe.`);
+                console.warn(`⚠️ [DB_DUPLICATE]: Factura ${record.SK} ya existe. Abortando para evitar duplicidad de gases.`);
                 return { skipped: true };
             }
         }
