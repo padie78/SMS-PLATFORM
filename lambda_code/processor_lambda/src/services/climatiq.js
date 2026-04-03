@@ -1,98 +1,98 @@
-import { STRATEGIES } from "../constants/climatiq_catalog.js";
+import crypto from 'crypto';
 
-export const calculateFootprint = async (lines, country = "ES") => {
-    let totalKg = 0;
-    let totalCo2 = 0;
-    let totalCh4 = 0;
-    let totalN2o = 0;
+export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
+    const now = new Date().toISOString();
     
-    const items = [];
-    // Nota: Mantén tu token en variables de entorno por seguridad
-    const CLIMATIQ_TOKEN = process.env.CLIMATIQ_TOKEN || "TU_TOKEN_AQUI"; 
+    const extData = aiData.extracted_data || {};
+    const invoice = extData.invoice || {};
+    const totalObj = extData.total_amount || {};
+    const vendor = extData.vendor || {};
+    const invoiceDate = invoice.date || "0000-00-00";
 
-    for (const line of lines) {
-        try {
-            // 1. Normalización y Validación de entrada
-            const strategy = STRATEGIES[line.category?.toUpperCase()] || STRATEGIES.ELEC;
-            const value = parseFloat(line.value);
-            const rawUnit = (line.unit || '').toLowerCase();
+    // 1. SK Natural para evitar duplicados
+    const vendorClean = (vendor.name || "UNKNOWN").replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    const numberClean = (invoice.number || "NONUM").replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    const SK = `INV#${vendorClean}#${numberClean}`;
 
-            // --- FILTRO DE SEGURIDAD (Evita el error 'EUR' is not a valid Weight unit) ---
-            const forbiddenUnits = ['eur', 'usd', 'money', '€', '$'];
-            if (forbiddenUnits.includes(rawUnit) || isNaN(value)) {
-                console.warn(`   ⏭️ [SKIP_LINE]: Unidad inválida detectada (${rawUnit}). Saltando línea.`);
-                continue; 
-            }
+    // --- LÓGICA DE FILTRADO PARA EL CONSUMO ---
+    const allLines = aiData.emission_lines || [];
+    
+    // 2. Filtramos solo las líneas que son de consumo real (ej. kWh) 
+    // Ignoramos explícitamente EUR, €, etc., para que no ensucien el 'value'
+    const consumptionLines = allLines.filter(line => {
+        const u = (line.unit || '').toLowerCase();
+        return u === 'kwh' || u === 'm3' || u === 'kg' || u === 'l';
+    });
 
-            // Mapeo estricto de unidades para Climatiq
-            let unit = 'kWh'; // Default para ELEC
-            if (rawUnit !== 'kwh') {
-                unit = 'kg'; // Fallback seguro para peso si no es energía
-            }
-            // -------------------------------------------------------------------------
+    // 3. Sumamos solo los valores de consumo (Dará 1123 en tu factura de Fenosa)
+    const totalValue = consumptionLines.reduce((acc, line) => acc + Number(line.value || 0), 0);
+    
+    // 4. Determinamos la unidad de visualización (priorizando kWh)
+    const displayUnit = consumptionLines[0]?.unit || "kWh";
 
-            const body = {
-                emission_factor: {
-                    activity_id: strategy.activity_id,
-                    region: country,
-                    data_version: "^3" 
-                },
-                parameters: {
-                    ...(unit === 'kWh' 
-                        ? { energy: value, energy_unit: "kWh" } 
-                        : { weight: value, weight_unit: unit })
-                }
-            };
+    // 5. Huella y Gases (Viene de tu service corregido)
+    const gases = footprint.constituent_gases || {};
+    const totalCo2e = Number(footprint.total_kg || 0);
+    const co2SafeValue = (gases.co2 && gases.co2 > 0) ? gases.co2 : totalCo2e;
 
-            const res = await fetch("https://api.climatiq.io/data/v1/estimate", {
-                method: "POST",
-                headers: { 
-                    "Authorization": `Bearer ${CLIMATIQ_TOKEN}`,
-                    "Content-Type": "application/json" 
-                },
-                body: JSON.stringify(body)
-            });
+    return {
+        PK: partitionKey,
+        SK: SK,
 
-            const data = await res.json();
-
-            if (!res.ok) {
-                // Si la API responde con error, lanzamos para ir al catch
-                throw new Error(data.message || "Error en la API de Climatiq");
-            }
-
-            // 2. Acumulación de resultados
-            totalKg += data.co2e;
-            const gases = data.constituent_gases || {};
-            
-            totalCo2 += (gases.co2 || 0);
-            totalCh4 += (gases.ch4 || 0);
-            totalN2o += (gases.n2o || 0);
-
-            items.push({
-                description: line.description,
-                original_value: value,
-                original_unit: unit,
-                co2e_kg: data.co2e,
-                constituent_gases: gases,
-                activity_id: strategy.activity_id,
-                audit_trail: data.audit_trail 
-            });
-
-        } catch (err) {
-            console.error(`   ⚠️ [LINE_ERROR] en "${line.description}": ${err.message}`);
-        }
-    }
-
-    // 3. Retorno estructurado para el Mapper
-    return { 
-        total_kg: totalKg, 
-        // Agregamos el activity_id del primer item para el Mapper
-        activity_id: items[0]?.activity_id || "electricity-supply_grid_es",
-        constituent_gases: {
-            co2: totalCo2,
-            ch4: totalCh4,
-            n2o: totalN2o
+        ai_analysis: {
+            // Usamos el activity_id que ahora devuelve tu service corregido
+            activity_id: footprint.activity_id || "electricity-supply_grid_es",
+            calculation_method: "consumption_based",
+            confidence_score: Number(aiData.confidence_score || 0),
+            insight_text: aiData.analysis_summary || `Factura de ${vendor.name} procesada.`,
+            requires_review: (Number(aiData.confidence_score || 0) < 0.8),
+            service_type: (aiData.category || "ELEC").toUpperCase(),
+            unit: displayUnit, // Ahora será 'kWh' y no 'EUR'
+            value: totalValue,  // Ahora será '1123' y no '1189.57'
+            year: invoiceDate.split('-')[0]
         },
-        items 
+
+        // Mantenemos el detalle de TODAS las líneas (incluyendo las de EUR) para el usuario
+        line_items: allLines.map((line, index) => ({
+            id: index + 1,
+            description: line.description,
+            value: Number(line.value || 0),
+            unit: line.unit || "EUR"
+        })),
+
+        analytics_dimensions: {
+            period_month: parseInt(invoiceDate.split('-')[1]) || 0,
+            period_year: parseInt(invoiceDate.split('-')[0]) || 0,
+            sector: "COMMERCIAL"
+        },
+
+        climatiq_result: {
+            co2e: totalCo2e,
+            co2: Number(co2SafeValue),
+            ch4: Number(gases.ch4 || 0),
+            n2o: Number(gases.n2o || 0),
+            co2e_unit: "kg",
+            timestamp: now
+        },
+
+        extracted_data: {
+            billing_period: {
+                start: invoice.period_start || null,
+                end: invoice.period_end || null
+            },
+            currency: totalObj.currency || "EUR",
+            invoice_date: invoiceDate,
+            invoice_number: invoice.number || "NO-NUMBER",
+            total_amount: Number(totalObj.total || 0),
+            vendor: vendor.name || "Unknown Vendor"
+        },
+
+        metadata: {
+            filename: s3Key.split('/').pop(),
+            s3_key: s3Key,
+            status: "PROCESSED",
+            upload_date: now,
+            technical_hash: crypto.createHash('sha256').update(s3Key).digest('hex').substring(0, 8)
+        }
     };
 };
