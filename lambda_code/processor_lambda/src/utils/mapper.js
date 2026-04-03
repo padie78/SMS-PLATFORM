@@ -2,7 +2,7 @@ import crypto from 'crypto';
 
 /**
  * Mapea la respuesta de la IA y Climatiq a un Golden Record para DynamoDB.
- * Incluye desglose de gases (CO2, CH4, N2O) y estrategia de Deduplicación Natural.
+ * Aplica lógica de protección para evitar ceros en el desglose de gases.
  */
 export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
     const now = new Date().toISOString();
@@ -19,7 +19,7 @@ export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
     const invoiceDate = invoice.date || "0000-00-00";
     const SK = `INV#${vendorClean}#${numberClean}`;
 
-    // 3. Sanitización de Datos Numéricos y Gases
+    // 3. Sanitización de Datos Numéricos
     const rawTotal = totalObj.total || 0;
     const cleanAmount = typeof rawTotal === 'string' 
         ? parseFloat(rawTotal.replace(/[^0-9.,]/g, '').replace(',', '.')) 
@@ -27,10 +27,18 @@ export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
 
     const confidence = Number(aiData.confidence_score || 0);
 
-    // NUEVO: Extracción de gases específicos de Climatiq
+    // 4. Lógica de Gases con Fallback (Protección contra NULL/0)
     const gases = footprint.constituent_gases || {};
+    const totalCo2e = Number(footprint.total_kg || footprint.co2e || 0);
 
-    // 4. Construcción del Objeto Final
+    /**
+     * ESTRATEGIA DE INTEGRIDAD:
+     * Si 'gases.co2' es nulo o 0 pero tenemos un total (co2e), 
+     * asumimos que el total es CO2 para no dejar los STATS vacíos.
+     */
+    const co2SafeValue = (gases.co2 && gases.co2 > 0) ? gases.co2 : totalCo2e;
+
+    // 5. Construcción del Objeto Final
     return {
         PK: partitionKey,
         SK: SK,
@@ -53,12 +61,12 @@ export const buildGoldenRecord = (partitionKey, s3Key, aiData, footprint) => {
             sector: "COMMERCIAL"
         },
 
-        // ACTUALIZADO: Bloque Climatiq con desglose de gases
+        // Bloque Climatiq Protegido
         climatiq_result: {
-            co2e: Number(footprint.total_kg || footprint.co2e || 0), // Total Equivalente
-            co2: Number(gases.co2 || 0),   // Dióxido de Carbono puro
-            ch4: Number(gases.ch4 || 0),   // Metano
-            n2o: Number(gases.n2o || 0),   // Óxido Nitroso
+            co2e: totalCo2e,                // Impacto total (Equivalente)
+            co2: Number(co2SafeValue),      // Dióxido de carbono (con fallback)
+            ch4: Number(gases.ch4 || 0),    // Metano (si existe)
+            n2o: Number(gases.n2o || 0),    // Óxido Nitroso (si existe)
             co2e_unit: "kg",
             timestamp: now
         },
