@@ -108,23 +108,24 @@ user_data = <<-EOF
               #!/bin/bash
               sudo yum update -y
 
-              # 1. Descarga e instalación de Grafana OSS
-              sudo wget https://dl.grafana.com/oss/release/grafana-10.4.1-1.x86_64.rpm
-              sudo yum install -y grafana-10.4.1-1.x86_64.rpm
+              # 1. Descarga e instalación de Grafana v11 (Versión compatible con Infinity)
+              # Cambiamos de la 10.4.1 a la 11.0.0 para evitar el "Enterprise License Error"
+              sudo wget https://dl.grafana.com/oss/release/grafana-11.0.0-1.x86_64.rpm
+              sudo yum install -y grafana-11.0.0-1.x86_64.rpm
 
               # 2. INSTALAR PLUGIN INFINITY (Gratuito y Versátil)
-              # Este reemplaza al de DynamoDB Enterprise y permite leer JSON/APIs sin pagar
+              # Este plugin es el estándar para conectar APIs de sostenibilidad sin pagar
               sudo grafana-cli plugins install yesoreyeram-infinity-datasource
 
-              # 3. Configurar variables de entorno para tu Backend SMS
-              
+              # 3. Configurar variables de entorno (Opcional para tu API SMS)
+
               # 4. Habilitar e iniciar el servicio
               sudo systemctl daemon-reload
               sudo systemctl enable --now grafana-server
               
-              # Reiniciar Grafana para asegurar que el plugin cargue bien
+              # Reiniciamos para asegurar que el plugin Infinity se cargue al primer arranque
               sudo systemctl restart grafana-server
-              EOF 
+              EOF
   tags = {
     Name        = "${var.project_name}-analytics-server"
     Environment = var.environment
