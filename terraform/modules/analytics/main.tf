@@ -104,7 +104,7 @@ resource "aws_instance" "grafana_server" {
   key_name               = var.key_name
 
   # Instalación automatizada de Grafana al arrancar
- user_data = <<-EOF
+user_data = <<-EOF
               #!/bin/bash
               sudo yum update -y
 
@@ -112,14 +112,19 @@ resource "aws_instance" "grafana_server" {
               sudo wget https://dl.grafana.com/oss/release/grafana-10.4.1-1.x86_64.rpm
               sudo yum install -y grafana-10.4.1-1.x86_64.rpm
 
-              # 2. INSTALAR PLUGIN DYNAMODB (Vital para tu proyecto)
-              sudo grafana-cli plugins install grafana-dynamodb-datasource
+              # 2. INSTALAR PLUGIN INFINITY (Gratuito y Versátil)
+              # Este reemplaza al de DynamoDB Enterprise y permite leer JSON/APIs sin pagar
+              sudo grafana-cli plugins install yesoreyeram-infinity-datasource
 
-              # 3. Configurar variables de entorno (Opcional pero recomendado)
+              # 3. Configurar variables de entorno para tu Backend SMS
+              echo "EMISSIONS_API_KEY=${var.emissions_api_key}" >> /etc/environment
 
               # 4. Habilitar e iniciar el servicio
               sudo systemctl daemon-reload
               sudo systemctl enable --now grafana-server
+              
+              # Reiniciar Grafana para asegurar que el plugin cargue bien
+              sudo systemctl restart grafana-server
               EOF
   tags = {
     Name        = "${var.project_name}-analytics-server"
