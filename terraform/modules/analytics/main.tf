@@ -117,15 +117,14 @@ user_data = <<-EOF
               sudo grafana-cli plugins install yesoreyeram-infinity-datasource
 
               # 3. Configurar variables de entorno para tu Backend SMS
-              echo "EMISSIONS_API_KEY=${var.emissions_api_key}" >> /etc/environment
-
+              
               # 4. Habilitar e iniciar el servicio
               sudo systemctl daemon-reload
               sudo systemctl enable --now grafana-server
               
               # Reiniciar Grafana para asegurar que el plugin cargue bien
               sudo systemctl restart grafana-server
-              EOF
+              EOF 
   tags = {
     Name        = "${var.project_name}-analytics-server"
     Environment = var.environment
