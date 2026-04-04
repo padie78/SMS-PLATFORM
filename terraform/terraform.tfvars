@@ -65,3 +65,7 @@ common_tags = {
   Owner       = "Diego"
   Environment = "Development"
 }
+
+allowed_ip_network = "0.0.0.0/0" # REEMPLAZA CON TU IP REAL
+key_name           = "terraform-infra"
+ami_id             = "ami-020510cc1127d41e9"

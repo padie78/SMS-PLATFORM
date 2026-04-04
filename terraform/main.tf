@@ -114,3 +114,26 @@ module "api" {
   query_route_path  = var.query_route_path
   signer_route_path = var.signer_route_path 
 }
+
+# ==============================================================================
+# 6. ANALÍTICA Y OBSERVABILIDAD (Capa de BI)
+# ==============================================================================
+module "analytics" {
+  source             = "./modules/analytics"
+  project_name       = var.project_name
+  environment        = var.environment
+
+  # Al ser serverless, usamos la VPC default para la EC2 de Grafana
+  # Esta variable la puedes dejar vacía o pasar un ID específico
+  vpc_id             = var.vpc_id 
+  
+  # Tu IP pública (ej: "181.xx.xx.xx/32") para que solo TÚ entres al panel
+  allowed_ip_network = var.allowed_ip_network
+
+  # Conexión con Database
+  dynamodb_table_arn = module.database.table_arn
+
+  # Configuración de Cómputo
+  ami_id             = var.ami_id
+  key_name           = var.key_name 
+}

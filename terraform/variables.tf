@@ -153,3 +153,23 @@ variable "bedrock_model_id" {
   description = "ID del modelo de Amazon Bedrock (ej: Claude 3 Haiku)"
   type        = string
 }
+
+variable "ami_id" {
+  type    = string
+  default = "ami-0c55b159cbfafe1f0" 
+}
+
+variable "allowed_ip_network" {
+  type        = string
+  description = "Tu IP pública para el SG de Grafana"
+}
+
+variable "vpc_id" {
+  type        = string
+  description = "ID de la VPC por defecto en Frankfurt"
+}
+
+variable "key_name" {
+  type        = string
+  description = "Nombre de la Key Pair para acceso SSH a la EC2"
+}
