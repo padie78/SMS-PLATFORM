@@ -106,26 +106,31 @@ resource "aws_instance" "grafana_server" {
   # Instalación automatizada de Grafana al arrancar
 user_data = <<-EOF
               #!/bin/bash
+              # Actualización de paquetes del sistema
               sudo yum update -y
 
-              # 1. Descarga e instalación de Grafana v11 (Versión compatible con Infinity)
-              # Cambiamos de la 10.4.1 a la 11.0.0 para evitar el "Enterprise License Error"
-              sudo wget https://dl.grafana.com/oss/release/grafana-11.0.0-1.x86_64.rpm
-              sudo yum install -y grafana-11.0.0-1.x86_64.rpm
+              # 1. Descarga e instalación de Grafana v11.6.0 (Versión OSS estable)
+              # Actualizamos a la 11.6.0 para aprovechar las últimas mejoras de seguridad y UI
+              sudo wget https://dl.grafana.com/oss/release/grafana-11.6.0-1.x86_64.rpm
+              sudo yum install -y grafana-11.6.0-1.x86_64.rpm
 
-              # 2. INSTALAR PLUGIN INFINITY (Gratuito y Versátil)
-              # Este plugin es el estándar para conectar APIs de sostenibilidad sin pagar
+              # 2. Instalación del plugin Infinity
+              # Vital para conectar APIs JSON/REST de forma dinámica
               sudo grafana-cli plugins install yesoreyeram-infinity-datasource
 
-              # 3. Configurar variables de entorno (Opcional para tu API SMS)
+              # 3. Configuración de permisos (Opcional pero recomendado)
+              # Asegura que Grafana tenga acceso a sus directorios de plugins tras la instalación
+              sudo chown -R grafana:grafana /var/lib/grafana/plugins
 
               # 4. Habilitar e iniciar el servicio
               sudo systemctl daemon-reload
-              sudo systemctl enable --now grafana-server
+              sudo systemctl enable grafana-server
               
-              # Reiniciamos para asegurar que el plugin Infinity se cargue al primer arranque
+              # Iniciamos y reiniciamos para forzar la carga de los plugins recién instalados
+              sudo systemctl start grafana-server
               sudo systemctl restart grafana-server
               EOF
+              
   tags = {
     Name        = "${var.project_name}-analytics-server"
     Environment = var.environment
