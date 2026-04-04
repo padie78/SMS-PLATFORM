@@ -1,0 +1,11 @@
+{
+  "co2e": 47.7945,
+  "co2e_unit": "kg",
+  "activity_id": "electricity-supply_grid-source_supplier_mix",
+  "audit_trail": "enabled",
+  "constituent_gases": {
+    "co2": 47.7945,
+    "ch4": 0,
+    "n2o": 0
+  }
+}
