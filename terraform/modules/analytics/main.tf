@@ -109,29 +109,29 @@ resource "aws_instance" "grafana_server" {
   # Instalación automatizada de Grafana al arrancar
 user_data = <<-EOF
               #!/bin/bash
-              # Actualización de paquetes del sistema
-              sudo yum update -y
+              # 1. Forzar detención y limpieza total de versiones viejas
+              sudo systemctl stop grafana-server || true
+              sudo yum remove -y grafana
+              sudo rm -rf /usr/sbin/grafana-server # Limpieza manual si quedó rastro
 
-              # 1. Descarga e instalación de Grafana v11.6.0 (Versión OSS estable)
-              # Actualizamos a la 11.6.0 para aprovechar las últimas mejoras de seguridad y UI
-              sudo wget https://dl.grafana.com/oss/release/grafana-11.6.0-1.x86_64.rpm
-              sudo yum install -y grafana-11.6.0-1.x86_64.rpm
+              # 2. Limpiar cache de yum para evitar conflictos
+              sudo yum clean all
 
-              # 2. Instalación del plugin Infinity
-              # Vital para conectar APIs JSON/REST de forma dinámica
+              # 3. Descarga directa de la v11.6.0
+              # Usamos -O para asegurar que el archivo se guarde con el nombre correcto
+              sudo wget https://dl.grafana.com/oss/release/grafana-11.6.0-1.x86_64.rpm -O /tmp/grafana-11.6.0.rpm
+
+              # 4. Instalación local forzada
+              sudo yum localinstall -y /tmp/grafana-11.6.0.rpm
+
+              # 5. Reinstalar plugins (se borran al hacer remove)
               sudo grafana-cli plugins install yesoreyeram-infinity-datasource
 
-              # 3. Configuración de permisos (Opcional pero recomendado)
-              # Asegura que Grafana tenga acceso a sus directorios de plugins tras la instalación
-              sudo chown -R grafana:grafana /var/lib/grafana/plugins
-
-              # 4. Habilitar e iniciar el servicio
+              # 6. Permisos y arranque
+              sudo chown -R grafana:grafana /var/lib/grafana
               sudo systemctl daemon-reload
               sudo systemctl enable grafana-server
-              
-              # Iniciamos y reiniciamos para forzar la carga de los plugins recién instalados
               sudo systemctl start grafana-server
-              sudo systemctl restart grafana-server
               EOF
 
   tags = {
