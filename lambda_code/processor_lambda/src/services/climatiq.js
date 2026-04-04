@@ -70,6 +70,12 @@ export const calculateFootprint = async (lines, country = "ES") => {
 
                 if (!res.ok) throw new Error(data.message || "Error API");
             }
+
+            // 🚀 LOG PARA TU MOCK
+            console.log("--- COPIAR DESDE AQUÍ ---");
+            console.log(JSON.stringify(data, null, 2));
+            console.log("--- HASTA AQUÍ ---");
+
             // --- FIN INTERCEPCIÓN MOCK ---
 
             // El resto del código sigue igual, usando 'data' (ya sea del Mock o de la API)
