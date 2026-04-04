@@ -2,12 +2,13 @@ import { STRATEGIES } from "../constants/climatiq_catalog.js";
 
 // 1. Define tu objeto Mock al principio del archivo
 const CLIMATIQ_MOCK_RESPONSE = {
-    co2e: 47.7945,
+    co2e: 23.897,
     co2e_unit: "kg",
     activity_id: "electricity-supply_grid-source_supplier_mix",
     audit_trail: "enabled",
     constituent_gases: {
-        co2: 47.7945,
+        co2e_total: 23.897,
+        co2: 23.897, // <--- Importante: Copiamos el total aquí para el Mapper
         ch4: 0,
         n2o: 0
     }
@@ -22,7 +23,7 @@ export const calculateFootprint = async (lines, country = "ES") => {
     const items = [];
     const CLIMATIQ_TOKEN = process.env.CLIMATIQ_TOKEN || "2E44QNZJMX5X5B6EM43E88KRZ8"; 
     // Variable para controlar el Mock (puedes usar process.env.USE_MOCK === 'true')
-    const USE_MOCK = false; 
+    const USE_MOCK = true; 
 
     for (const line of lines) {
         try {
