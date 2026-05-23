@@ -1,8 +1,8 @@
-import type { IInvoiceExtractorService } from '../../../ports/IInvoiceExtractorService.js';
-import type { IInvoiceRepository } from '../../../ports/IInvoiceRepository.js';
+import type { IInvoiceExtractorService } from '../../../ports/invoice-extractor-service.port.js';
+import type { IInvoiceRepository } from '../../../ports/invoice-repository.port.js';
 import { InvoiceNotFoundError } from '../errors/InvoiceNotFoundError.js';
 import { InvoiceNotProcessableError } from '../errors/InvoiceNotProcessableError.js';
-import type { ProcessInvoiceDto } from './dtos/process-invoice.dto.js';
+import type { ProcessInvoiceDto } from '../../../dtos/invoice/process-invoice/process-invoice.dto.js';
 
 /**
  * Caso de uso: procesa una factura encolada y persiste los datos sugeridos.

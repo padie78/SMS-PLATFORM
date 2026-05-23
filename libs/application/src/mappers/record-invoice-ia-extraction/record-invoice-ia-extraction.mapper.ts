@@ -1,6 +1,6 @@
 import type { InvoiceIaExtractedPatch, TenantOrgContext } from '@sms/domain';
 
-import type { RecordInvoiceIaExtractionInputDto } from '../dtos/record-invoice-ia-extraction.input.dto.js';
+import type { RecordInvoiceIaExtractionInputDto } from '../../dtos/record-invoice-ia-extraction/record-invoice-ia-extraction.input.dto.js';
 
 export class RecordInvoiceIaExtractionMapper {
   static toTenantOrgContext(dto: RecordInvoiceIaExtractionInputDto): TenantOrgContext {

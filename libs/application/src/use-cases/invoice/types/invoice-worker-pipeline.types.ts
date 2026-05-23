@@ -1,4 +1,4 @@
-import type { InvoiceDispatchQueueMessageDto } from '../../dispatch-invoice-from-s3-put/dtos/invoice-dispatch-queue-message.dto.js';
+import type { InvoiceDispatchQueueMessageDto } from '../../../dtos/dispatch-invoice-from-s3-put/invoice-dispatch-queue-message.dto.js';
 
 /** Mensajes antiguos / tests sin `status` ni `timestamp` estrictos. */
 export interface InvoiceWorkerLegacyQueueBodyDto {

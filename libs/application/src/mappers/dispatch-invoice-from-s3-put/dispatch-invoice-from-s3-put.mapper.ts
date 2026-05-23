@@ -4,10 +4,10 @@ import {
   InvoiceUploadKey
 } from '@sms/domain';
 
-import type { DecodedInvoiceUploadKeyDto } from '../dtos/decoded-invoice-upload-key.dto.js';
-import type { DispatchInvoiceFromS3PutInputDto } from '../dtos/dispatch-invoice-from-s3-put.input.dto.js';
-import type { DispatchInvoiceFromS3PutOutputDto } from '../dtos/dispatch-invoice-from-s3-put.output.dto.js';
-import type { S3DispatcherInvokeDto } from '../dtos/s3-dispatcher-invoke.dto.js';
+import type { DecodedInvoiceUploadKeyDto } from '../../dtos/dispatch-invoice-from-s3-put/decoded-invoice-upload-key.dto.js';
+import type { DispatchInvoiceFromS3PutInputDto } from '../../dtos/dispatch-invoice-from-s3-put/dispatch-invoice-from-s3-put.input.dto.js';
+import type { DispatchInvoiceFromS3PutOutputDto } from '../../dtos/dispatch-invoice-from-s3-put/dispatch-invoice-from-s3-put.output.dto.js';
+import type { S3DispatcherInvokeDto } from '../../dtos/dispatch-invoice-from-s3-put/s3-dispatcher-invoke.dto.js';
 
 /** Traductor DTO plano ↔ entidades de dominio (sin Zod ni persistencia). */
 export class DispatchInvoiceFromS3PutMapper {

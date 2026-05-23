@@ -3,8 +3,16 @@ export {
   type DynamoDocumentClientOptions
 } from './dynamo-document-client.factory.js';
 
-export { createDispatchInvoiceFromS3PutUseCase } from './invoice-dispatch.factory.js';
-export type { CreateInvoiceDispatchUseCaseParams } from './invoice-dispatch.factory.js';
+export {
+  createDispatchInvoiceFromS3PutUseCase,
+  createDispatchInvoiceFromS3PutHandler
+} from './invoice-dispatch.factory.js';
+export type {
+  CreateInvoiceDispatchUseCaseParams,
+  DispatchInvoiceFromS3PutHandler,
+  DispatchInvoiceFromS3PutLambdaEvent,
+  DispatchInvoiceFromS3PutLambdaContext
+} from './invoice-dispatch.factory.js';
 
 export { createRecordInvoiceIaExtractionUseCase } from './record-invoice-ia-extraction.factory.js';
 

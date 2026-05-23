@@ -2,11 +2,11 @@ import { ApplicationValidationError } from '../../../exceptions/application-vali
 import type {
   DomainEventEnvelope,
   IDomainEventPublisher
-} from '../../../ports/IDomainEventPublisher.js';
+} from '../../../ports/domain-event-publisher.port.js';
 import type {
   PublishDomainEventInputDto,
   PublishDomainEventOutputDto
-} from './dtos/publish-domain-event.dto.js';
+} from '../../../dtos/events/publish-domain-event/publish-domain-event.dto.js';
 
 export type PublishDomainEventDeps = {
   readonly publisher: IDomainEventPublisher;
@@ -25,8 +25,8 @@ const NAME_PATTERN = /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.v\d+$/i;
  *  1. Valida invariantes mínimas del DTO (nombre con shape `ctx.verb.vN`,
  *     campos obligatorios).
  *  2. Construye un `DomainEventEnvelope` canónico con `eventId` único.
- *  3. Delega en `IDomainEventPublisher`.
- *  4. Retorna eventId + timestamp para que el caller pueda correlacionar.
+ *  3. Delega en `IDoma
+ *  4. Retorna eventId + timestamp para que el caller pueda corrinEventPublisher`.elacionar.
  *
  * NO hace persistencia local (outbox). Si el caller necesita garantía
  * exactly-once, debe combinarlo con un repositorio outbox + un publisher

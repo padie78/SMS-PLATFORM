@@ -1,8 +1,8 @@
-import type { IInvoiceRepository } from '../../../ports/IInvoiceRepository.js';
-import type { IQueueService } from '../../../ports/IQueueService.js';
+import type { IInvoiceRepository } from '../../../ports/invoice-repository.port.js';
+import type { IQueueService } from '../../../ports/queue-service.port.js';
 import { InvoiceAlreadyExistsError } from '../errors/InvoiceAlreadyExistsError.js';
-import type { RegisterInvoiceIntentDto } from './dtos/register-invoice-intent.dto.js';
-import { RegisterInvoiceIntentMapper } from './mappers/register-invoice-intent.mapper.js';
+import type { RegisterInvoiceIntentDto } from '../../../dtos/invoice/register-invoice-intent/register-invoice-intent.dto.js';
+import { RegisterInvoiceIntentMapper } from '../../../mappers/invoice/register-invoice-intent/register-invoice-intent.mapper.js';
 
 /**
  * Caso de uso: registra el skeleton auditable de una factura y encola su ingesta.

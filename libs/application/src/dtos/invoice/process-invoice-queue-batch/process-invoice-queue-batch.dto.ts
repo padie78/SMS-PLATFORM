@@ -1,4 +1,4 @@
-import type { ProcessInvoicePipelineInputDto } from '../../process-invoice-pipeline/dtos/process-invoice-pipeline.dto.js';
+import type { ProcessInvoicePipelineInputDto } from '../process-invoice-pipeline/process-invoice-pipeline.dto.js';
 
 /** Record SQS crudo recibido por el worker (tras `Records[]` del evento). */
 export interface SqsBatchRecord {

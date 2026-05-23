@@ -1,4 +1,4 @@
-import type { GraphQLNode, MutationResponse, PartitionContext } from '../../types/node-config.types.js';
+import type { GraphQLNode, MutationResponse, PartitionContext } from '../../../use-cases/node-config/types/node-config.types.js';
 
 export type AppSyncMethodName =
   | 'saveNode'

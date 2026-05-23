@@ -2,11 +2,11 @@ import { ApplicationValidationError } from '../../../exceptions/application-vali
 import type {
   IInvoiceProcessingQueueWriter,
   InvoiceProcessingQueueMessage
-} from '../../../ports/IInvoiceProcessingQueueWriter.js';
+} from '../../../ports/invoice-processing-queue-writer.port.js';
 import type {
   EnqueueInvoiceProcessingInputDto,
   EnqueueInvoiceProcessingOutputDto
-} from './dtos/enqueue-invoice-processing.dto.js';
+} from '../../../dtos/invoice/enqueue-invoice-processing/enqueue-invoice-processing.dto.js';
 
 export type EnqueueInvoiceProcessingDeps = {
   readonly queue: IInvoiceProcessingQueueWriter;

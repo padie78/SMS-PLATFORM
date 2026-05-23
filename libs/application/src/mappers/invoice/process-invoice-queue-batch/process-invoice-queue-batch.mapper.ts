@@ -1,11 +1,11 @@
 import { extractInvoiceMetadataFromS3Key } from '@sms/domain';
 
-import type { ProcessInvoicePipelineInputDto } from '../../process-invoice-pipeline/dtos/process-invoice-pipeline.dto.js';
+import type { ProcessInvoicePipelineInputDto } from '../../../dtos/invoice/process-invoice-pipeline/process-invoice-pipeline.dto.js';
 import type {
   ParsedQueueRecord,
   ProcessInvoiceQueueBatchInputDto,
   SqsBatchRecord
-} from '../dtos/process-invoice-queue-batch.dto.js';
+} from '../../../dtos/invoice/process-invoice-queue-batch/process-invoice-queue-batch.dto.js';
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0;

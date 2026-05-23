@@ -1,16 +1,16 @@
 import { Result, type Result as ResultType } from '@sms/common';
 
-import type { IInvoiceAiAnalyzerService } from '../../../ports/IInvoiceAiAnalyzerService.js';
-import type { IInvoiceCategoryClassifierService } from '../../../ports/IInvoiceCategoryClassifierService.js';
-import type { IInvoiceGoldenRecordRepository } from '../../../ports/IInvoiceGoldenRecordRepository.js';
-import type { IInvoiceOcrService } from '../../../ports/IInvoiceOcrService.js';
-import type { IInvoiceStatusNotifierService } from '../../../ports/IInvoiceStatusNotifierService.js';
+import type { IInvoiceAiAnalyzerService } from '../../../ports/invoice-ai-analyzer-service.port.js';
+import type { IInvoiceCategoryClassifierService } from '../../../ports/invoice-category-classifier-service.port.js';
+import type { IInvoiceGoldenRecordRepository } from '../../../ports/invoice-golden-record-repository.port.js';
+import type { IInvoiceOcrService } from '../../../ports/invoice-ocr-service.port.js';
+import type { IInvoiceStatusNotifierService } from '../../../ports/invoice-status-notifier-service.port.js';
 import type { InvoiceEmissionCalculations } from '../types/invoice-ai-analysis.types.js';
 import type {
   ProcessInvoicePipelineInputDto,
   ProcessInvoicePipelineOutputDto
-} from './dtos/process-invoice-pipeline.dto.js';
-import { buildInvoiceGoldenRecord } from './mappers/process-invoice-pipeline.mapper.js';
+} from '../../../dtos/invoice/process-invoice-pipeline/process-invoice-pipeline.dto.js';
+import { buildInvoiceGoldenRecord } from '../../../mappers/invoice/process-invoice-pipeline/process-invoice-pipeline.mapper.js';
 
 const READY_STATUS = 'READY_FOR_REVIEW' as const;
 const FAILED_STATUS = 'FAILED' as const;

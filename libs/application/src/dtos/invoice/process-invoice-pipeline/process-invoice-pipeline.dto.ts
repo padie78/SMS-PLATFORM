@@ -1,4 +1,4 @@
-import type { InvoiceGoldenRecord } from '../../types/invoice-golden-record.types.js';
+import type { InvoiceGoldenRecord } from '../../../use-cases/invoice/types/invoice-golden-record.types.js';
 
 /** Input plano del pipeline de procesamiento de una factura individual. */
 export interface ProcessInvoicePipelineInputDto {

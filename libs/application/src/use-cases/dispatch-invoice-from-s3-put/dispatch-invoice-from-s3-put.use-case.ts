@@ -4,9 +4,9 @@ import { EnqueuedInvoiceDispatch } from '@sms/domain';
 import type { InvoiceDispatchOrgResolverPort } from '../../ports/invoice-dispatch-org-resolver.port.js';
 import type { InvoiceDispatchQueuePort } from '../../ports/invoice-dispatch-queue.port.js';
 import type { InvoiceDispatchSkeletonWriterPort } from '../../ports/invoice-dispatch-skeleton-writer.port.js';
-import type { DispatchInvoiceFromS3PutInputDto } from './dtos/dispatch-invoice-from-s3-put.input.dto.js';
-import type { DispatchInvoiceFromS3PutOutputDto } from './dtos/dispatch-invoice-from-s3-put.output.dto.js';
-import { DispatchInvoiceFromS3PutMapper } from './mappers/dispatch-invoice-from-s3-put.mapper.js';
+import type { DispatchInvoiceFromS3PutInputDto } from '../../dtos/dispatch-invoice-from-s3-put/dispatch-invoice-from-s3-put.input.dto.js';
+import type { DispatchInvoiceFromS3PutOutputDto } from '../../dtos/dispatch-invoice-from-s3-put/dispatch-invoice-from-s3-put.output.dto.js';
+import { DispatchInvoiceFromS3PutMapper } from '../../mappers/dispatch-invoice-from-s3-put/dispatch-invoice-from-s3-put.mapper.js';
 
 export type DispatchInvoiceFromS3PutDeps = {
   readonly orgResolver: InvoiceDispatchOrgResolverPort;

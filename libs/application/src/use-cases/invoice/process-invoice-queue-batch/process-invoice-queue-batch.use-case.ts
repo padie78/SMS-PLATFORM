@@ -3,8 +3,8 @@ import type {
   ProcessInvoiceQueueBatchFailureItem,
   ProcessInvoiceQueueBatchInputDto,
   ProcessInvoiceQueueBatchOutputDto
-} from './dtos/process-invoice-queue-batch.dto.js';
-import { ProcessInvoiceQueueBatchMapper } from './mappers/process-invoice-queue-batch.mapper.js';
+} from '../../../dtos/invoice/process-invoice-queue-batch/process-invoice-queue-batch.dto.js';
+import { ProcessInvoiceQueueBatchMapper } from '../../../mappers/invoice/process-invoice-queue-batch/process-invoice-queue-batch.mapper.js';
 
 export type ProcessInvoiceQueueBatchDeps = {
   readonly pipeline: ProcessInvoicePipelineUseCase;

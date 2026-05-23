@@ -1,15 +1,15 @@
 import { ApplicationValidationError } from '../../../exceptions/application-validation.error.js';
-import type { INodeConfigRepository } from '../../../ports/INodeConfigRepository.js';
+import type { INodeConfigRepository } from '../../../ports/node-config-repository.port.js';
 import type {
   HandleAppSyncRequestInputDto,
   HandleAppSyncRequestOutputDto
-} from './dtos/handle-appsync-request.dto.js';
+} from '../../../dtos/node-config/handle-appsync-request/handle-appsync-request.dto.js';
 import {
   mapItemToGraphqlNode,
   metadataFromInput,
   mutationResponseFromItem,
   mutationResponseFromOrganizationSave
-} from './mappers/handle-appsync-request.mapper.js';
+} from '../../../mappers/node-config/handle-appsync-request/handle-appsync-request.mapper.js';
 import type {
   GraphQLNode,
   MutationResponse,

@@ -3,7 +3,7 @@ import type {
   MutationResponse,
   NodeConfigItem,
   SaveOrganizationRootResult
-} from '../../types/node-config.types.js';
+} from '../../../use-cases/node-config/types/node-config.types.js';
 
 /**
  * Adaptadores de salida: traducen estructuras del repositorio (`NodeConfigItem`,

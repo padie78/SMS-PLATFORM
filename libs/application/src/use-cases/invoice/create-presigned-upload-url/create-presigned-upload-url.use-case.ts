@@ -5,11 +5,11 @@ import {
 import { formatInvoiceUploadObjectKey } from '@sms/domain';
 
 import { ApplicationValidationError } from '../../../exceptions/application-validation.error.js';
-import type { IS3PresignedUploadUrlService } from '../../../ports/IS3PresignedUploadUrlService.js';
+import type { IS3PresignedUploadUrlService } from '../../../ports/s3-presigned-upload-url-service.port.js';
 import type {
   CreatePresignedUploadUrlInputDto,
   CreatePresignedUploadUrlOutputDto
-} from './dtos/create-presigned-upload-url.dto.js';
+} from '../../../dtos/invoice/create-presigned-upload-url/create-presigned-upload-url.dto.js';
 
 export type CreatePresignedUploadUrlDeps = {
   readonly presigner: IS3PresignedUploadUrlService;

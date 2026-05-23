@@ -3,12 +3,12 @@ import type {
   InvoiceAiEmissionLine,
   InvoiceAiTotalAmount,
   InvoiceEmissionCalculations
-} from '../../types/invoice-ai-analysis.types.js';
+} from '../../../use-cases/invoice/types/invoice-ai-analysis.types.js';
 import type {
   InvoiceGoldenRecord,
   InvoiceGoldenRecordExtractedData,
   InvoiceGoldenRecordMetadata
-} from '../../types/invoice-golden-record.types.js';
+} from '../../../use-cases/invoice/types/invoice-golden-record.types.js';
 
 const ANOMALY_UNIT_PRICE_THRESHOLD = 0.25;
 const DEFAULT_CONFIDENCE = 0.85;

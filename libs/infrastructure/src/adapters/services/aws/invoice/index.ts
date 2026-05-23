@@ -34,11 +34,6 @@ export {
   type SqsInvoiceProcessingQueueAdapterOptions
 } from './sqs-invoice-processing-queue.adapter.js';
 export {
-  handleInvoiceIaExtractionSqsMessage,
-  type InvoiceIaExtractionSqsHandlerDeps,
-  type InvoiceIaExtractionWorkerDeps
-} from './invoice-ia-extraction-sqs.handler.js';
-export {
   InvoiceDispatchQueueMessageSchema,
   parseInvoiceDispatchQueueMessage,
   safeParseInvoiceDispatchQueueMessage,
