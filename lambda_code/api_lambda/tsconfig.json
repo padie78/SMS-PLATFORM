@@ -2,8 +2,9 @@
   "extends": "../../tsconfig.node-paths.json",
   "compilerOptions": {
     "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
     "types": ["node"]
   },
-  "include": ["src/ts/**/*.ts", "src/infrastructure/**/*.ts"],
-  "exclude": ["src/**/*.example.ts"]
+  "include": ["src/**/*.js", "src/**/*.ts"]
 }

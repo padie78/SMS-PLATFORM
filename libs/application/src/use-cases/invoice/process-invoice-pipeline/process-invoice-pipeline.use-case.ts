@@ -1,0 +1,136 @@
+import { Result, type Result as ResultType } from '@sms/common';
+
+import type { IInvoiceAiAnalyzerService } from '../../../ports/IInvoiceAiAnalyzerService.js';
+import type { IInvoiceCategoryClassifierService } from '../../../ports/IInvoiceCategoryClassifierService.js';
+import type { IInvoiceGoldenRecordRepository } from '../../../ports/IInvoiceGoldenRecordRepository.js';
+import type { IInvoiceOcrService } from '../../../ports/IInvoiceOcrService.js';
+import type { IInvoiceStatusNotifierService } from '../../../ports/IInvoiceStatusNotifierService.js';
+import type { InvoiceEmissionCalculations } from '../types/invoice-ai-analysis.types.js';
+import type {
+  ProcessInvoicePipelineInputDto,
+  ProcessInvoicePipelineOutputDto
+} from './dtos/process-invoice-pipeline.dto.js';
+import { buildInvoiceGoldenRecord } from './mappers/process-invoice-pipeline.mapper.js';
+
+const READY_STATUS = 'READY_FOR_REVIEW' as const;
+const FAILED_STATUS = 'FAILED' as const;
+const NO_EMISSIONS_YET: InvoiceEmissionCalculations = { total_kg: 0, items: [] };
+
+export type ProcessInvoicePipelineDeps = {
+  readonly ocrService: IInvoiceOcrService;
+  readonly categoryClassifier: IInvoiceCategoryClassifierService;
+  readonly aiAnalyzer: IInvoiceAiAnalyzerService;
+  readonly goldenRecordRepository: IInvoiceGoldenRecordRepository;
+  readonly statusNotifier: IInvoiceStatusNotifierService;
+};
+
+/**
+ * Caso de uso: pipeline completo de digitalización IA de una factura.
+ *
+ * Orquesta OCR → clasificación → análisis IA → mapeo a Golden Record →
+ * persistencia → notificación push. Si cualquier paso falla, marca el
+ * registro como `FAILED` vía notificador y propaga el error para que la
+ * cola decida reintento o DLQ.
+ */
+export class ProcessInvoicePipelineUseCase {
+  constructor(private readonly deps: ProcessInvoicePipelineDeps) {}
+
+  async execute(
+    input: ProcessInvoicePipelineInputDto
+  ): Promise<ResultType<ProcessInvoicePipelineOutputDto, string>> {
+    try {
+      const rawText = await this.deps.ocrService.extractText(input.bucket, input.key);
+      if (!rawText) {
+        throw new Error('OCR service returned empty content');
+      }
+
+      const detectedCategory = await this.deps.categoryClassifier.classifyCategory(rawText);
+      const aiAnalysis = await this.deps.aiAnalyzer.analyzeInvoice(rawText, detectedCategory);
+
+      const goldenRecord = buildInvoiceGoldenRecord({
+        orgId: input.orgId.startsWith('ORG#') ? input.orgId : `ORG#${input.orgId}`,
+        sk: input.sk,
+        aiAnalysis,
+        emissions: NO_EMISSIONS_YET,
+        status: READY_STATUS,
+        category: detectedCategory,
+        originalMetadata: { s3_key: input.key, bucket: input.bucket }
+      });
+
+      await this.deps.goldenRecordRepository.persistGoldenRecord(goldenRecord);
+
+      await this.notifyReadyForReview(input.sk, aiAnalysis);
+
+      return Result.ok({ status: READY_STATUS, goldenRecord });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown pipeline error';
+      await this.notifyFailureSafely(input.sk, message);
+      throw error;
+    }
+  }
+
+  private async notifyReadyForReview(
+    invoiceId: string,
+    aiAnalysis: Awaited<ReturnType<IInvoiceAiAnalyzerService['analyzeInvoice']>>
+  ): Promise<void> {
+    const source = aiAnalysis.source_data ?? {};
+    const tech = aiAnalysis.technical_ids ?? {};
+    const totalAmountField = source.total_amount;
+    const totalAmount =
+      typeof totalAmountField === 'object' && totalAmountField !== null
+        ? totalAmountField.total_with_tax ?? 0
+        : totalAmountField ?? 0;
+
+    const uiPayload: Record<string, unknown> = {
+      vendor: source.vendor?.name ?? 'Unknown',
+      invoice_date: source.invoice_date ?? source.date ?? null,
+      invoice_number: source.invoice_number ?? null,
+      billing_period: source.billing_period ?? {},
+      currency: source.currency ?? 'EUR',
+      total_amount: totalAmount,
+      net_amount:
+        typeof totalAmountField === 'object' && totalAmountField !== null
+          ? totalAmountField.net_amount ?? source.net_amount ?? null
+          : source.net_amount ?? null,
+      tax_amount:
+        typeof totalAmountField === 'object' && totalAmountField !== null
+          ? totalAmountField.tax_amount ?? source.tax_amount ?? null
+          : source.tax_amount ?? null,
+      tariff: tech.tariff ?? null,
+      cups: tech.cups ?? null,
+      contract_reference: tech.contract_reference ?? null,
+      contracted_power: {
+        p1: tech.contracted_power_p1 ?? null,
+        p2: tech.contracted_power_p2 ?? null
+      },
+      customer: source.customer ?? null,
+      lines: aiAnalysis.emission_lines ?? []
+    };
+
+    try {
+      await this.deps.statusNotifier.notifyStatus({
+        invoiceId,
+        status: READY_STATUS,
+        message: 'Digitization complete',
+        payload: uiPayload
+      });
+    } catch {
+      // El notifier debe absorber sus propios errores; aquí garantizamos
+      // que un fallo de UI nunca rompa el use case (regla 4 — Green IT:
+      // no rehacer cómputos por errores transitorios de canal lateral).
+    }
+  }
+
+  private async notifyFailureSafely(invoiceId: string, reason: string): Promise<void> {
+    try {
+      await this.deps.statusNotifier.notifyStatus({
+        invoiceId,
+        status: FAILED_STATUS,
+        message: `Error: ${reason}`,
+        payload: null
+      });
+    } catch {
+      // Idem: el fallo de la notificación nunca debe ocultar el error original.
+    }
+  }
+}

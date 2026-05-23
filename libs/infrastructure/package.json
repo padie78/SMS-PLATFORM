@@ -11,20 +11,31 @@
       "import": "../../dist/libs/infrastructure/index.js"
     }
   },
-  "files": ["../../dist/libs/infrastructure"],
+  "files": [
+    "../../dist/libs/infrastructure"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf ../../dist/libs/infrastructure"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.500.0",
     "@aws-sdk/client-dynamodb": "^3.658.0",
+    "@aws-sdk/client-eventbridge": "3.658.0",
     "@aws-sdk/client-s3": "^3.658.0",
     "@aws-sdk/client-sqs": "^3.658.0",
+    "@aws-sdk/client-textract": "^3.500.0",
     "@aws-sdk/lib-dynamodb": "^3.658.0",
+    "@aws-sdk/s3-request-presigner": "^3.658.0",
+    "@sms/application": "*",
     "@sms/common": "*",
-    "@sms/domain": "*",
-    "@sms/application": "*"
+    "@sms/domain": "*"
   },
-  "keywords": ["sms", "infrastructure", "dynamodb", "typescript"]
+  "keywords": [
+    "sms",
+    "infrastructure",
+    "dynamodb",
+    "typescript"
+  ]
 }

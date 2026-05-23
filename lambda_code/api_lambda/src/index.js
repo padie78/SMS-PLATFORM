@@ -1,13 +1,30 @@
-import { buildAppSyncHandler } from "./handlers/appsyncHandler.js";
-import { HandleAppSyncRequest } from "./application/usecases/handleAppSyncRequest.js";
-import { ConfigServiceAdapter } from "./infrastructure/config/configServiceAdapter.js";
+/**
+ * Composition root: API Lambda (AppSync resolver — configuración multi-tenant).
+ *
+ * Resolvers expuestos: `saveNode`, `updateNode`, `deleteNode`, `getNode`,
+ * `getTree`, `getInvoice` (stub). La lógica vive en `@sms/application`
+ * (`HandleAppSyncRequestUseCase`) y `@sms/infrastructure`
+ * (`DynamoNodeConfigRepository`, `appsync-event.parser`).
+ *
+ * Variables de entorno relevantes:
+ *  - DYNAMO_TABLE / DATABASE_NAME : tabla single-table (obligatoria).
+ *  - DEFAULT_ORGAN_SCOPE_ID       : org fallback cuando no hay claims.
+ *  - LAMBDA_DEFAULT_TENANT_ID / DEV_TENANT_ID / ALLOW_TENANT_FALLBACK_FROM_SUB
+ *                                  : modo desarrollo (NO PROD).
+ */
+import {
+  createAppSyncNodeConfigHandler,
+  createDynamoDocumentClient
+} from "@sms/infrastructure";
 
-const bucket = process.env.S3_BUCKET_NAME || "sms-platform-dev-uploads";
+const tableName =
+  process.env.DYNAMO_TABLE ||
+  process.env.DATABASE_NAME ||
+  "sms-platform-dev-emissions";
 
-const configService = new ConfigServiceAdapter();
-const useCase = new HandleAppSyncRequest({
-  configService,
-  defaultBucket: bucket
+const doc = createDynamoDocumentClient();
+
+export const handler = createAppSyncNodeConfigHandler({
+  doc,
+  tableName
 });
-
-export const handler = buildAppSyncHandler({ useCase });

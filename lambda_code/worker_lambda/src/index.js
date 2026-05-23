@@ -1,11 +1,36 @@
-import { buildSqsBatchHandler } from "./handlers/sqsBatchHandler.js";
-import { ProcessSqsBatch } from "./application/usecases/ProcessSqsBatch.js";
-import { ServicesPipelineRunner } from "./infrastructure/pipeline/ServicesPipelineRunner.js";
+import { createDynamoDocumentClient, createProcessInvoiceQueueBatchUseCase } from '@sms/infrastructure';
 
-const pipelineRunner = new ServicesPipelineRunner();
-const useCase = new ProcessSqsBatch({
-  pipelineRunner,
-  defaultOrgId: process.env.DEFAULT_ORG_ID || "DEFAULT_ORG"
+// --- COMPOSITION ROOT (config/) ---
+const tableName = process.env.DYNAMO_TABLE ?? process.env.DYNAMODB_TABLE;
+if (!tableName) {
+  throw new Error('DYNAMO_TABLE environment variable is not defined');
+}
+
+const defaultOrgId = process.env.DEFAULT_ORG_ID ?? 'DEFAULT_ORG';
+const appsyncUrl = process.env.APPSYNC_URL;
+const appsyncApiKey = process.env.APPSYNC_API_KEY;
+
+const doc = createDynamoDocumentClient();
+const processInvoiceQueueBatch = createProcessInvoiceQueueBatchUseCase({
+  doc,
+  tableName,
+  appsyncUrl,
+  appsyncApiKey
 });
 
-export const handler = buildSqsBatchHandler({ useCase });
+// --- HANDLER (traductor AWS → caso de uso) ---
+export const handler = async (event) => {
+  const records = Array.isArray(event?.Records) ? event.Records : [];
+
+  const input = {
+    records: records.map((record) => ({
+      messageId: String(record?.messageId ?? ''),
+      body: typeof record?.body === 'string' ? record.body : ''
+    })),
+    defaultOrgId
+  };
+
+  const result = await processInvoiceQueueBatch.execute(input);
+
+  return { batchItemFailures: result.batchItemFailures };
+};

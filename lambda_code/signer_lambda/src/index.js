@@ -1,17 +1,16 @@
-import { buildAppSyncHandler } from "./handlers/appsyncGenerateUploadUrlHandler.js";
-import { GeneratePresignedUploadUrl } from "./application/usecases/GeneratePresignedUploadUrl.js";
-import { S3PresignerAws } from "./infrastructure/aws/S3PresignerAws.js";
+/**
+ * Thin entrypoint: Signer Lambda (AppSync resolver — `generateUploadUrl`).
+ *
+ * Este archivo no instancia casos de uso. Sólo exporta el primary adapter
+ * construido por `@sms/infrastructure`, que internamente traduce el evento
+ * AppSync al DTO plano y delega en `@sms/application`.
+ */
+import { createPresignedUploadUrlHandler } from "@sms/infrastructure";
 
 const region = process.env.AWS_REGION || "eu-central-1";
 const uploadBucket = process.env.UPLOAD_BUCKET;
 
-const presigner = new S3PresignerAws(region);
-const useCase = new GeneratePresignedUploadUrl({
-  presigner,
-  uploadBucket,
-  defaultContentType: "application/pdf",
-  expiresInSeconds: 300
+export const handler = createPresignedUploadUrlHandler({
+  region,
+  uploadBucket
 });
-
-export const handler = buildAppSyncHandler({ useCase });
-

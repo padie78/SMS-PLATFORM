@@ -17,3 +17,4 @@ export * from './repositories/dynamo-production-log.repository.js';
 export * from './repositories/dynamo-region.repository.js';
 export * from './repositories/dynamo-tariff.repository.js';
 export * from './repositories/dynamo-user.repository.js';
+export * from './repositories/dynamo-node-config.repository.js';
