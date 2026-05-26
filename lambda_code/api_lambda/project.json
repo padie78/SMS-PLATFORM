@@ -18,6 +18,7 @@
         "main": "lambda_code/api_lambda/src/index.js",
         "outputPath": "dist/lambda_code/api_lambda",
         "outputFileName": "main.js",
+        "thirdParty": true,
         "external": ["@aws-sdk/*"],
         "esbuildOptions": {
           "logLevel": "warning"
