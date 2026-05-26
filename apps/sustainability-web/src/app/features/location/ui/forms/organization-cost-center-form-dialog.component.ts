@@ -6,7 +6,9 @@ import {
   inject,
   signal
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { map, startWith } from 'rxjs/operators';
 import { ButtonModule } from 'primeng/button';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import type { CostCenterDTO } from '@sms/common';
@@ -174,7 +176,7 @@ const DIALOG_TABS: ReadonlyArray<CostCenterDialogTabDef> = Object.freeze([
           [label]="isEdit() ? 'Actualizar centro de costo' : 'Crear centro de costo'"
           icon="pi pi-save"
           class="border-round-xl text-xs font-bold"
-          [disabled]="form.invalid"
+          [disabled]="formInvalid()"
           (click)="save()"
         ></button>
       </div>
@@ -188,6 +190,23 @@ export class OrganizationCostCenterFormDialogComponent implements OnInit {
 
   readonly form: CostCenterFormGroup = buildCostCenterFormGroup(this.fb);
   readonly controls = this.form.controls as CostCenterFormShape;
+
+  /**
+   * Estado de validez del form como signal. Con `ChangeDetectionStrategy.OnPush`,
+   * un binding directo a `form.invalid` no se re-evalúa cuando el usuario tipea
+   * (Angular no dispara CD por cambios internos del FormControl). El signal
+   * sí lo dispara → el botón "Crear" se habilita en cuanto el form es válido.
+   *
+   * `startWith(form.status)` evita el primer frame con `undefined` y refleja
+   * desde el inicio si el form ya nace inválido (típico: `name` vacío).
+   */
+  readonly formInvalid = toSignal(
+    this.form.statusChanges.pipe(
+      startWith(this.form.status),
+      map((status) => status !== 'VALID')
+    ),
+    { initialValue: this.form.status !== 'VALID' }
+  );
 
   readonly tabs: ReadonlyArray<CostCenterDialogTabDef> = DIALOG_TABS;
   readonly activeTabId = signal<CostCenterDialogTabDef['id']>(DIALOG_TABS[0]?.id ?? 'general');
