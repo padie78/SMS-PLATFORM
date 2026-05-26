@@ -94,6 +94,7 @@ export class AppSyncApiService {
       subscription OnInvoiceUpdated {
         onInvoiceUpdated {
           id
+          invoiceId
           status
           extractedData
           message
@@ -105,6 +106,58 @@ export class AppSyncApiService {
       query: subscription,
       authMode: 'userPool'
     }) as Observable<InvoiceUpdatedGraphqlEvent>;
+  }
+
+  onInvoiceExtractionCompleted(invoiceId: string): Observable<InvoiceUpdatedGraphqlEvent> {
+    const subscription = `
+      subscription OnInvoiceExtractionCompleted($invoiceId: ID!) {
+        onInvoiceExtractionCompleted(invoiceId: $invoiceId) {
+          invoiceId
+          status
+          message
+          extractionVersion
+          overallConfidence
+          vendor
+          vendorTaxId
+          invoiceNumber
+          invoiceDate
+          totalAmount
+          currency
+          consumptionValue
+          consumptionUnit
+          warnings
+          suspiciousValues
+          fields
+        }
+      }
+    `;
+    return this.client.graphql({
+      query: subscription,
+      variables: { invoiceId: this.stripId(invoiceId) },
+      authMode: 'userPool'
+    }) as Observable<InvoiceUpdatedGraphqlEvent>;
+  }
+
+  onInvoiceFailed(invoiceId: string): Observable<InvoiceUpdatedGraphqlEvent> {
+    const subscription = `
+      subscription OnInvoiceFailed($invoiceId: ID!) {
+        onInvoiceFailed(invoiceId: $invoiceId) {
+          id
+          invoiceId
+          status
+          message
+        }
+      }
+    `;
+    return this.client.graphql({
+      query: subscription,
+      variables: { invoiceId: this.stripId(invoiceId) },
+      authMode: 'userPool'
+    }) as Observable<InvoiceUpdatedGraphqlEvent>;
+  }
+
+  private stripId(id: string): string {
+    return id.startsWith('INV#') ? id.slice(4) : id;
   }
 
   async resolveInvoiceAssignment(input: ResolveInvoiceAssignmentInput): Promise<InvoiceAssignmentResolution> {

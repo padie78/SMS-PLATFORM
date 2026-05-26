@@ -78,7 +78,17 @@ export class InvoiceCreateComponent implements OnInit {
       this.cdr.markForCheck();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'No se pudo guardar la factura';
-      this.notifications.error('Error al confirmar', message);
+      if (message.includes('VERSION_CONFLICT')) {
+        const reload = window.confirm(
+          'Otra sesión modificó esta factura.\n\n¿Recargar datos del servidor? (Cancelar = mantener tus cambios locales)'
+        );
+        if (reload) {
+          await this.onboarding.reloadFromBackend();
+          this.notifications.success('Datos recargados', 'Revisa el formulario antes de confirmar de nuevo.');
+        }
+      } else {
+        this.notifications.error('Error al confirmar', message);
+      }
       this.cdr.markForCheck();
     }
   }

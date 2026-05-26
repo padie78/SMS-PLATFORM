@@ -7,8 +7,7 @@ import {
 } from '@sms/application';
 import { extractInvoiceMetadataFromS3Key } from '@sms/domain';
 
-import { DynamoInvoiceDispatchSkeletonAdapter } from '../adapters/services/aws/invoice/dynamo-invoice-dispatch-skeleton.adapter.js';
-import { S3InvoiceDispatchOrgResolverAdapter } from '../adapters/services/aws/invoice/s3-invoice-dispatch-org-resolver.adapter.js';
+import { DynamoInvoiceDispatchLifecycleAdapter } from '../adapters/services/aws/invoice/dynamo-invoice-dispatch-lifecycle.adapter.js';
 import { SqsInvoiceDispatchQueueAdapter } from '../adapters/services/aws/invoice/sqs-invoice-dispatch-queue.adapter.js';
 
 export type CreateInvoiceDispatchUseCaseParams = {
@@ -22,8 +21,7 @@ export function createDispatchInvoiceFromS3PutUseCase(
   params: CreateInvoiceDispatchUseCaseParams
 ): DispatchInvoiceFromS3PutUseCase {
   const deps: DispatchInvoiceFromS3PutDeps = {
-    orgResolver: new S3InvoiceDispatchOrgResolverAdapter(),
-    skeletonWriter: new DynamoInvoiceDispatchSkeletonAdapter(params.doc, params.tableName),
+    lifecycle: new DynamoInvoiceDispatchLifecycleAdapter(params.doc, params.tableName),
     invoiceQueue: new SqsInvoiceDispatchQueueAdapter({ queueUrl: params.queueUrl })
   };
   return new DispatchInvoiceFromS3PutUseCase(deps);

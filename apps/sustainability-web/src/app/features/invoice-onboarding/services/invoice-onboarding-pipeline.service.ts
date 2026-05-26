@@ -104,22 +104,16 @@ export class InvoiceOnboardingPipelineService {
     this.tearDown();
     this.workflow.setPhase('awaiting_ai');
 
-    this.aiSubscription = this.appsync.onInvoiceUpdated(dynamoInvoiceId).subscribe({
+    const plainId = stripInvoiceIdPrefix(dynamoInvoiceId);
+    this.aiSubscription = this.appsync.onInvoiceExtractionCompleted(plainId).subscribe({
       next: (event: InvoiceUpdatedGraphqlEvent) => {
-        const payload = this.pickInvoiceUpdatedPayload(event);
-        if (!payload?.id || !matchesInvoiceSubscription(dynamoInvoiceId, payload.id)) {
+        const payload = this.pickExtractionPayload(event);
+        if (!payload?.['invoiceId']) return;
+        const status = String(payload['status'] ?? '').toUpperCase();
+        if (!AI_READY_STATUSES.has(status) && status !== 'AI_VALIDATION_REQUIRED') {
           return;
         }
-        const status = String(payload.status ?? '').toUpperCase();
-        if (status === 'FAILED' || status === 'ERROR' || status === 'DLQ') {
-          this.workflow.setError('El procesamiento IA falló. Reintenta con otro archivo.');
-          this.tearDown();
-          return;
-        }
-        if (!AI_READY_STATUSES.has(status)) {
-          return;
-        }
-        void this.applyAiPayload(payload, dynamoInvoiceId);
+        void this.applyExtractionPayload(payload, dynamoInvoiceId);
       },
       error: () => {
         this.workflow.setError('Error en la suscripción de estado de factura.');
@@ -127,11 +121,38 @@ export class InvoiceOnboardingPipelineService {
     });
   }
 
-  private async applyAiPayload(
-    payload: InvoiceUpdatedPayload,
+  async rejectCurrentInvoice(reason: string): Promise<void> {
+    const wip = this.wipStore.getSnapshot();
+    if (!wip?.invoiceId) throw new Error('No hay borrador activo.');
+    await this.lifecycleApi.rejectInvoice(
+      wip.invoiceId,
+      reason,
+      wip.metaVersion ?? undefined
+    );
+    this.tearDown();
+    this.wipStore.clear();
+    this.workflow.setPhase('error');
+  }
+
+  async retryCurrentInvoice(reason?: string): Promise<void> {
+    const wip = this.wipStore.getSnapshot();
+    if (!wip?.invoiceId) throw new Error('No hay borrador activo.');
+    await this.lifecycleApi.retryInvoiceProcessing(
+      wip.invoiceId,
+      wip.metaVersion ?? undefined,
+      reason
+    );
+    this.workflow.setPhase('awaiting_ai');
+    this.subscribeAiUpdates(wip.dynamoInvoiceId);
+  }
+
+  private async applyExtractionPayload(
+    payload: Record<string, unknown>,
     dynamoInvoiceId: string
   ): Promise<void> {
-    const parsed = this.parser.parse(payload.extractedData);
+    const extractedData =
+      payload['fields'] ?? payload['extractedData'] ?? payload;
+    const parsed = this.parser.parse(extractedData);
     const fields = mapParsedToExtractionFields(parsed);
 
     const review: InvoiceReviewView = {
@@ -153,14 +174,20 @@ export class InvoiceOnboardingPipelineService {
 
     this.aiBaseline = { ...review };
     this.applyExtractedToState(review);
+    this.wipStore.setExtractionMeta({
+      warnings: (payload['warnings'] as unknown[]) ?? [],
+      suspiciousValues: (payload['suspiciousValues'] as unknown[]) ?? [],
+      overallConfidence: Number(payload['overallConfidence'] ?? review.confidence)
+    });
 
     const plainId = stripInvoiceIdPrefix(dynamoInvoiceId);
     const lifecycle = await this.lifecycleApi.getInvoiceLifecycle(plainId);
     if (lifecycle?.meta?.version != null) {
       this.wipStore.setMetaVersion(lifecycle.meta.version);
     }
-    if (lifecycle?.latestExtractionDraft?.version != null) {
-      this.wipStore.setExtractionDraftVersion(lifecycle.latestExtractionDraft.version);
+    const draft = lifecycle?.latestExtractionDraft as { version?: number } | null | undefined;
+    if (draft?.version != null) {
+      this.wipStore.setExtractionDraftVersion(draft.version);
     }
 
     this.workflow.setPhase('ready_for_review');
@@ -173,6 +200,10 @@ export class InvoiceOnboardingPipelineService {
     if (review.vendorTaxId) {
       this.wipStore.setVendorTaxId(review.vendorTaxId);
     }
+  }
+
+  async fetchWipFromBackend(invoiceId: string): Promise<Record<string, unknown> | null> {
+    return this.lifecycleApi.getInvoiceWipSnapshot(invoiceId);
   }
 
   async commitToBackend(): Promise<InvoiceLifecycleMutationResult> {
@@ -220,7 +251,12 @@ export class InvoiceOnboardingPipelineService {
       buildingId: wip.hierarchy.buildingId,
       costCenterId: wip.hierarchy.costCenterId || undefined,
       assetId: wip.hierarchy.assetId || undefined,
-      corrections: [],
+      corrections: (wip.corrections ?? []).map((c) => ({
+        field: c.field,
+        oldValue: c.oldValue,
+        newValue: c.newValue,
+        reason: c.reason ?? 'USER_CORRECTION'
+      })),
       notes: state.internalNote || undefined,
       wipSnapshotHash: await this.hashUtf8(JSON.stringify(wip))
     };
@@ -235,6 +271,19 @@ export class InvoiceOnboardingPipelineService {
       this.workflow.setPhase('error');
       throw e;
     }
+  }
+
+  private pickExtractionPayload(
+    response: InvoiceUpdatedGraphqlEvent
+  ): Record<string, unknown> | undefined {
+    const root = response as unknown as {
+      data?: { onInvoiceExtractionCompleted?: Record<string, unknown> };
+      value?: { data?: { onInvoiceExtractionCompleted?: Record<string, unknown> } };
+    };
+    return (
+      root.data?.onInvoiceExtractionCompleted ??
+      root.value?.data?.onInvoiceExtractionCompleted
+    );
   }
 
   private pickInvoiceUpdatedPayload(

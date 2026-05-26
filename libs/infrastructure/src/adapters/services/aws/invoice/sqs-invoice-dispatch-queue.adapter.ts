@@ -25,6 +25,8 @@ export class SqsInvoiceDispatchQueueAdapter implements InvoiceDispatchQueuePort 
     bucket: string;
     key: string;
     orgId: string;
+    tenantId: string;
+    invoiceId: string;
     sk: string;
     requestId: string;
   }): Promise<void> {
@@ -38,7 +40,10 @@ export class SqsInvoiceDispatchQueueAdapter implements InvoiceDispatchQueuePort 
       bucket: params.bucket,
       key: params.key,
       orgId: params.orgId,
+      tenantId: params.tenantId,
+      invoiceId: params.invoiceId,
       sk: params.sk,
+      correlationId: params.requestId,
       timestamp: new Date().toISOString(),
       status: 'PENDING_WORKER' as const
     };
@@ -48,7 +53,13 @@ export class SqsInvoiceDispatchQueueAdapter implements InvoiceDispatchQueuePort 
     await this.sqs.send(
       new SendMessageCommand({
         QueueUrl: this.queueUrl,
-        MessageBody: JSON.stringify(messageBody)
+        MessageBody: JSON.stringify(messageBody),
+        MessageAttributes: {
+          correlationId: { DataType: 'String', StringValue: params.requestId },
+          tenantId: { DataType: 'String', StringValue: params.tenantId },
+          orgId: { DataType: 'String', StringValue: params.orgId },
+          invoiceId: { DataType: 'String', StringValue: params.invoiceId }
+        }
       })
     );
   }

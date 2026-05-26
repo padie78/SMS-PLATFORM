@@ -23,17 +23,18 @@ export interface InvoiceLifecycleMutationResult {
 }
 
 export interface InvoiceLifecycleSnapshotResponse {
+  readonly invoiceId?: string;
+  readonly status?: string;
+  readonly version?: number;
+  readonly snapshot?: unknown;
+  readonly latestExtractionDraft?: unknown | null;
+  readonly goldenRecord?: unknown | null;
   readonly meta?: {
     readonly invoiceId?: string;
     readonly status?: string;
     readonly version?: number;
     readonly isWip?: boolean;
   };
-  readonly latestExtractionDraft?: {
-    readonly version?: number;
-    readonly overallConfidence?: number;
-  } | null;
-  readonly goldenRecord?: unknown | null;
 }
 
 type GraphqlResult<T> = { data?: T };
@@ -93,23 +94,80 @@ export class InvoiceLifecycleApiService {
     return result;
   }
 
+  async rejectInvoice(invoiceId: string, reason: string, expectedVersion?: number): Promise<InvoiceLifecycleMutationResult> {
+    const mutation = `
+      mutation RejectInvoice($input: RejectInvoiceInput!) {
+        rejectInvoice(input: $input) {
+          success message invoiceId version status updatedAt
+        }
+      }
+    `;
+    const data = await this.executeGraphql<{ rejectInvoice: InvoiceLifecycleMutationResult }>(mutation, {
+      input: { invoiceId, reason, expectedVersion }
+    });
+    const result = data.rejectInvoice;
+    if (!result?.success) throw new Error(result?.message ?? 'rejectInvoice failed');
+    return result;
+  }
+
+  async retryInvoiceProcessing(
+    invoiceId: string,
+    expectedVersion?: number,
+    reason?: string
+  ): Promise<InvoiceLifecycleMutationResult> {
+    const mutation = `
+      mutation RetryInvoice($input: RetryInvoiceProcessingInput!) {
+        retryInvoiceProcessing(input: $input) {
+          success message invoiceId version status updatedAt correlationId
+        }
+      }
+    `;
+    const data = await this.executeGraphql<{ retryInvoiceProcessing: InvoiceLifecycleMutationResult }>(
+      mutation,
+      { input: { invoiceId, expectedVersion, reason } }
+    );
+    const result = data.retryInvoiceProcessing;
+    if (!result?.success) throw new Error(result?.message ?? 'retryInvoiceProcessing failed');
+    return result;
+  }
+
   async getInvoiceLifecycle(invoiceId: string): Promise<InvoiceLifecycleSnapshotResponse | null> {
     const query = `
       query GetInvoiceLifecycle($invoiceId: ID!) {
-        getInvoiceLifecycle(invoiceId: $invoiceId)
+        getInvoiceLifecycle(invoiceId: $invoiceId) {
+          invoiceId status version snapshot latestExtractionDraft goldenRecord
+        }
       }
     `;
-    const data = await this.executeGraphql<{ getInvoiceLifecycle: unknown }>(query, { invoiceId });
+    const data = await this.executeGraphql<{ getInvoiceLifecycle: InvoiceLifecycleSnapshotResponse | null }>(
+      query,
+      { invoiceId }
+    );
     const raw = data.getInvoiceLifecycle;
-    if (raw == null) return null;
-    if (typeof raw === 'string') {
-      try {
-        return JSON.parse(raw) as InvoiceLifecycleSnapshotResponse;
-      } catch {
-        return null;
+    if (!raw) return null;
+    return {
+      meta: {
+        invoiceId: raw.invoiceId,
+        status: raw.status,
+        version: raw.version
+      },
+      latestExtractionDraft: raw.latestExtractionDraft as InvoiceLifecycleSnapshotResponse['latestExtractionDraft'],
+      goldenRecord: raw.goldenRecord
+    };
+  }
+
+  async getInvoiceWipSnapshot(invoiceId: string): Promise<Record<string, unknown> | null> {
+    const query = `
+      query GetInvoiceWipSnapshot($invoiceId: ID!) {
+        getInvoiceWipSnapshot(invoiceId: $invoiceId) {
+          invoiceId version status snapshot latestExtractionDraft wipExpiresAt
+        }
       }
-    }
-    return raw as InvoiceLifecycleSnapshotResponse;
+    `;
+    const data = await this.executeGraphql<{ getInvoiceWipSnapshot: Record<string, unknown> | null }>(query, {
+      invoiceId
+    });
+    return data.getInvoiceWipSnapshot;
   }
 
   private async executeGraphql<T>(

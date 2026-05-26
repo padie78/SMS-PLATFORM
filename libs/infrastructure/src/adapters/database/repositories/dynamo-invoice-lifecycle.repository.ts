@@ -20,6 +20,8 @@ import {
 } from '@sms/application';
 import {
   InvoiceLifecycleItemSchema,
+  buildInvoiceLookupRefItem,
+  buildInvoiceLookupPk,
   buildInvoiceMetaSk,
   buildInvoiceGoldenSk,
   buildInvoicePartitionKey,
@@ -28,8 +30,11 @@ import {
   DEFAULT_INVOICE_WIP_TTL_SECONDS,
   type InvoiceAuditEntryItem,
   type InvoiceExtractionDraft,
-  type InvoiceLifecycleItem
+  InvoiceLookupRefItemSchema,
+  type InvoiceLifecycleItem,
+  type InvoiceLookupRefItem
 } from '@sms/common';
+import type { InvoiceDocumentHashLookupResult } from '@sms/application';
 
 export type DynamoInvoiceLifecycleRepositoryOptions = {
   readonly doc: DynamoDBDocumentClient;
@@ -118,16 +123,65 @@ export class DynamoInvoiceLifecycleRepository implements IInvoiceLifecycleReposi
       })
     });
 
-    try {
-      await this.doc.send(
-        new PutCommand({
+    const lookupRef = buildInvoiceLookupRefItem({
+      invoiceId: input.invoiceId,
+      tenantId: input.tenantId,
+      orgId: input.orgId,
+      metaSk,
+      createdAt: now
+    });
+
+    const transactItems: Array<Record<string, unknown>> = [
+      {
+        Put: {
           TableName: this.tableName,
           Item: item,
           ConditionExpression: 'attribute_not_exists(SK)'
+        }
+      },
+      {
+        Put: {
+          TableName: this.tableName,
+          Item: lookupRef as Record<string, unknown>,
+          ConditionExpression: 'attribute_not_exists(SK)'
+        }
+      },
+      {
+        Put: {
+          TableName: this.tableName,
+          Item: input.initialAudit as Record<string, unknown>
+        }
+      }
+    ];
+
+    if (input.documentHashSha256) {
+      transactItems.push({
+        Put: {
+          TableName: this.tableName,
+          Item: {
+            PK: `HASH#${input.documentHashSha256}`,
+            SK: 'REF',
+            invoiceId: input.invoiceId,
+            tenantId: input.tenantId,
+            orgId: input.orgId,
+            version: 0,
+            status: input.initialStatus,
+            isWip: markAsWip,
+            createdAt: now
+          },
+          ConditionExpression: 'attribute_not_exists(SK)'
+        }
+      });
+    }
+
+    try {
+      await this.doc.send(
+        new TransactWriteCommand({
+          TransactItems: transactItems as NonNullable<
+            ConstructorParameters<typeof TransactWriteCommand>[0]
+          >['TransactItems']
         })
       );
-
-      await this.putAuditEntry(input.initialAudit);
 
       return {
         invoiceId: input.invoiceId,
@@ -141,6 +195,43 @@ export class DynamoInvoiceLifecycleRepository implements IInvoiceLifecycleReposi
       }
       throw err;
     }
+  }
+
+  async getInvoiceLookupRef(invoiceId: string): Promise<InvoiceLookupRefItem | null> {
+    const plainId = stripInvPrefix(invoiceId.replace(/#META$/, ''));
+    const res = await this.doc.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: { PK: buildInvoiceLookupPk(plainId), SK: 'REF' }
+      })
+    );
+    if (!res.Item) return null;
+    const parsed = InvoiceLookupRefItemSchema.safeParse(res.Item);
+    return parsed.success ? parsed.data : (res.Item as InvoiceLookupRefItem);
+  }
+
+  async findActiveByDocumentHash(
+    documentHashSha256: string
+  ): Promise<InvoiceDocumentHashLookupResult | null> {
+    const res = await this.doc.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: { PK: `HASH#${documentHashSha256}`, SK: 'REF' }
+      })
+    );
+    const item = res.Item;
+    if (!item || item['isWip'] === false) return null;
+    const invoiceId = String(item['invoiceId'] ?? '');
+    const tenantId = String(item['tenantId'] ?? '');
+    const orgId = String(item['orgId'] ?? '');
+    if (!invoiceId || !tenantId || !orgId) return null;
+    return {
+      invoiceId,
+      tenantId,
+      orgId,
+      version: typeof item['version'] === 'number' ? item['version'] : 0,
+      status: String(item['status'] ?? 'DRAFT') as InvoiceDocumentHashLookupResult['status']
+    };
   }
 
   async getLifecycleSnapshot(

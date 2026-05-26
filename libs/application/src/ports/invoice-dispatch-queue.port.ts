@@ -4,6 +4,8 @@ export interface InvoiceDispatchQueuePort {
     bucket: string;
     key: string;
     orgId: string;
+    tenantId: string;
+    invoiceId: string;
     sk: string;
     requestId: string;
   }): Promise<void>;

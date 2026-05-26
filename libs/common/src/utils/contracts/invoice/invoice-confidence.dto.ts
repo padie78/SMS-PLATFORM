@@ -25,6 +25,25 @@ export const INVOICE_CONFIDENCE_THRESHOLDS = {
 export const InvoiceConfidenceLevelSchema = z.enum(['HIGH', 'MEDIUM', 'LOW']);
 export type InvoiceConfidenceLevel = z.infer<typeof InvoiceConfidenceLevelSchema>;
 
+/** Bounding box normalizado Textract (0..1 respecto al ancho/alto de página). */
+export const InvoiceBoundingBoxSchema = z
+  .object({
+    left: z.number().min(0).max(1),
+    top: z.number().min(0).max(1),
+    width: z.number().min(0).max(1),
+    height: z.number().min(0).max(1)
+  })
+  .strict();
+export type InvoiceBoundingBox = z.infer<typeof InvoiceBoundingBoxSchema>;
+
+export const InvoiceFieldGeometrySchema = z
+  .object({
+    page: z.number().int().min(1).default(1),
+    boundingBox: InvoiceBoundingBoxSchema
+  })
+  .strict();
+export type InvoiceFieldGeometry = z.infer<typeof InvoiceFieldGeometrySchema>;
+
 export function classifyConfidence(score: number): InvoiceConfidenceLevel {
   if (!Number.isFinite(score)) return 'LOW';
   if (score >= INVOICE_CONFIDENCE_THRESHOLDS.HIGH_MIN) return 'HIGH';
@@ -48,6 +67,8 @@ export const InvoiceConfidenceFieldSchema = z
     confidence: z.number().min(0).max(1),
     level: InvoiceConfidenceLevelSchema,
     rawOcr: z.string().nullable().optional(),
+    /** Posición en el PDF para highlights en el wizard (Textract Geometry). */
+    geometry: InvoiceFieldGeometrySchema.optional(),
     /** Marca si el usuario editó el campo (cambia a `false` solo cuando lo IA llenó). */
     userEdited: z.boolean().default(false)
   })
@@ -62,6 +83,7 @@ export function buildConfidenceField(input: {
   numericValue?: number | null;
   confidence: number;
   rawOcr?: string | null;
+  geometry?: InvoiceFieldGeometry;
   userEdited?: boolean;
 }): InvoiceConfidenceField {
   const confidence = Math.max(0, Math.min(1, input.confidence));
@@ -71,6 +93,7 @@ export function buildConfidenceField(input: {
     confidence,
     level: classifyConfidence(confidence),
     rawOcr: input.rawOcr,
+    geometry: input.geometry,
     userEdited: input.userEdited ?? false
   });
 }

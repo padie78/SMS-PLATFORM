@@ -20,13 +20,13 @@
         styleClass="text-[10px] uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700"
       />
     </header>
-    <div class="flex-1 min-h-0 bg-slate-900 p-3 md:p-4">
-      @if (safePdfUrl()) {
-        <iframe
-          title="Factura PDF"
-          class="w-full h-full min-h-[420px] rounded-xl border border-white/5 bg-slate-100"
-          [src]="safePdfUrl()!"
-        ></iframe>
+    <div class="flex-1 min-h-0 bg-slate-900 p-3 md:p-4 overflow-auto">
+      @if (pdfFile()) {
+        <app-invoice-validation-split-view
+          [pdfFile]="pdfFile()"
+          [activeField]="activeField()"
+          [highlights]="[]"
+        />
       } @else {
         <div class="flex flex-col items-center justify-center h-full text-slate-500 text-sm p-6 text-center">
           <i class="pi pi-file-pdf text-5xl mb-3 opacity-30" aria-hidden="true"></i>
@@ -160,19 +160,57 @@
       </fieldset>
     </form>
 
-    <footer class="px-5 md:px-6 py-4 border-t border-slate-100 bg-slate-50/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    @if (onboarding.isOCR() && (warnings().length || suspicious().length)) {
+      <aside class="mx-5 md:mx-6 mb-2 rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-xs">
+        <p class="font-bold text-amber-900 m-0 mb-2 uppercase tracking-wide">Advertencias IA</p>
+        <ul class="m-0 pl-4 text-amber-900 space-y-1">
+          @for (w of warnings(); track w.code) {
+            <li>{{ w.message ?? w.code }}</li>
+          }
+          @for (s of suspicious(); track s.field) {
+            <li>{{ s.field }}: {{ s.reason }}</li>
+          }
+        </ul>
+      </aside>
+    }
+
+    <footer class="px-5 md:px-6 py-4 border-t border-slate-100 bg-slate-50/80 flex flex-col gap-3">
       <p class="text-[11px] text-slate-500 m-0">
         Los cambios se guardan localmente; recién al confirmar en el último paso se persisten en DynamoDB.
       </p>
-      <p-button
-        type="button"
-        label="Guardar y continuar"
-        icon="pi pi-arrow-right"
-        iconPos="right"
-        styleClass="p-button-emerald rounded-xl text-xs font-bold px-5"
-        [disabled]="form.invalid"
-        (onClick)="submit()"
-      />
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        @if (onboarding.isOCR()) {
+          <div class="flex gap-2">
+            <p-button
+              type="button"
+              label="Rechazar"
+              severity="danger"
+              [outlined]="true"
+              styleClass="rounded-xl text-xs"
+              [loading]="isRejecting()"
+              (onClick)="rejectInvoice()"
+            />
+            <p-button
+              type="button"
+              label="Reintentar IA"
+              severity="secondary"
+              [outlined]="true"
+              styleClass="rounded-xl text-xs"
+              [loading]="isRetrying()"
+              (onClick)="retryAi()"
+            />
+          </div>
+        }
+        <p-button
+          type="button"
+          label="Guardar y continuar"
+          icon="pi pi-arrow-right"
+          iconPos="right"
+          styleClass="p-button-emerald rounded-xl text-xs font-bold px-5 ml-auto"
+          [disabled]="form.invalid"
+          (onClick)="submit()"
+        />
+      </div>
     </footer>
   </section>
 </div>

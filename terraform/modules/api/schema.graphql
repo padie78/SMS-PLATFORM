@@ -63,11 +63,54 @@ type Node @aws_api_key @aws_cognito_user_pools {
 
 type Invoice @aws_api_key @aws_cognito_user_pools {
   id: ID!
+  invoiceId: ID!
   status: String
   vendor: String
   totalAmount: Float
   extractedData: AWSJSON
   message: String
+}
+
+type InvoiceExtractionPayload @aws_api_key @aws_cognito_user_pools {
+  invoiceId: ID!
+  status: String!
+  message: String
+  extractionVersion: Int
+  overallConfidence: Float
+  vendor: String
+  vendorTaxId: String
+  invoiceNumber: String
+  invoiceDate: String
+  totalAmount: Float
+  currency: String
+  consumptionValue: Float
+  consumptionUnit: String
+  warnings: AWSJSON
+  suspiciousValues: AWSJSON
+  fields: AWSJSON
+}
+
+type InvoiceLifecycleSnapshot @aws_api_key @aws_cognito_user_pools {
+  invoiceId: ID!
+  tenantId: String!
+  orgId: String!
+  status: String!
+  version: Int!
+  createdAt: String!
+  updatedAt: String!
+  snapshot: AWSJSON
+  pointers: AWSJSON
+  latestExtractionDraft: AWSJSON
+  goldenRecord: AWSJSON
+}
+
+type InvoiceWipSnapshot @aws_api_key @aws_cognito_user_pools {
+  invoiceId: ID!
+  version: Int!
+  status: String!
+  snapshot: AWSJSON
+  latestExtractionDraft: AWSJSON
+  wipExpiresAt: String
 }
 
 # --- INPUTS (sin tenantId: el aislamiento multi-tenant viene de Cognito) ---
@@ -103,6 +146,26 @@ input InvoiceFieldCorrectionInput {
   originalConfidence: Float
 }
 
+input ConfirmInvoiceExtractionInput {
+  invoiceId: ID!
+  expectedVersion: Int
+  extractionDraftVersion: Int!
+  corrections: [InvoiceFieldCorrectionInput!]
+  notes: String
+}
+
+input RejectInvoiceInput {
+  invoiceId: ID!
+  expectedVersion: Int
+  reason: String!
+}
+
+input RetryInvoiceProcessingInput {
+  invoiceId: ID!
+  expectedVersion: Int
+  reason: String
+}
+
 input CommitInvoiceLifecycleInput {
   invoiceId: ID!
   expectedVersion: Int
@@ -136,7 +199,8 @@ type Query {
   getTree(rootNodeId: ID, orgId: ID): [Node] @aws_cognito_user_pools
   getNode(id: ID!, orgId: ID): Node @aws_cognito_user_pools
   getInvoice(id: ID!): Invoice @aws_cognito_user_pools
-  getInvoiceLifecycle(invoiceId: ID!): AWSJSON @aws_cognito_user_pools
+  getInvoiceLifecycle(invoiceId: ID!): InvoiceLifecycleSnapshot @aws_cognito_user_pools
+  getInvoiceWipSnapshot(invoiceId: ID!): InvoiceWipSnapshot @aws_cognito_user_pools
 }
 
 # --- ACCIONES ---
@@ -154,6 +218,15 @@ type Mutation {
   commitInvoiceLifecycle(input: CommitInvoiceLifecycleInput!): InvoiceLifecycleMutationResult
     @aws_cognito_user_pools
 
+  confirmInvoiceExtraction(input: ConfirmInvoiceExtractionInput!): InvoiceLifecycleMutationResult
+    @aws_cognito_user_pools
+
+  rejectInvoice(input: RejectInvoiceInput!): InvoiceLifecycleMutationResult
+    @aws_cognito_user_pools
+
+  retryInvoiceProcessing(input: RetryInvoiceProcessingInput!): InvoiceLifecycleMutationResult
+    @aws_cognito_user_pools
+
   updateInvoiceStatus(
     id: ID!
     status: String!
@@ -164,6 +237,26 @@ type Mutation {
 
 # --- SUSCRIPCIONES ---
 type Subscription {
+  onInvoiceProcessingUpdated(invoiceId: ID!): Invoice
+    @aws_subscribe(mutations: ["updateInvoiceStatus"])
+    @aws_api_key @aws_cognito_user_pools
+
+  onInvoiceExtractionCompleted(invoiceId: ID!): InvoiceExtractionPayload
+    @aws_subscribe(mutations: ["updateInvoiceStatus"])
+    @aws_api_key @aws_cognito_user_pools
+
+  onInvoiceValidationRequired(invoiceId: ID!): InvoiceExtractionPayload
+    @aws_subscribe(mutations: ["updateInvoiceStatus"])
+    @aws_api_key @aws_cognito_user_pools
+
+  onInvoiceCompleted(invoiceId: ID!): Invoice
+    @aws_subscribe(mutations: ["updateInvoiceStatus"])
+    @aws_api_key @aws_cognito_user_pools
+
+  onInvoiceFailed(invoiceId: ID!): Invoice
+    @aws_subscribe(mutations: ["updateInvoiceStatus"])
+    @aws_api_key @aws_cognito_user_pools
+
   onInvoiceUpdated: Invoice
     @aws_subscribe(mutations: ["updateInvoiceStatus"])
     @aws_api_key @aws_cognito_user_pools

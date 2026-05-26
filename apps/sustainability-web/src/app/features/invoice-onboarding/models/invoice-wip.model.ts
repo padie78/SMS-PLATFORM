@@ -17,6 +17,15 @@ export interface InvoiceWipSnapshot {
   readonly vendorTaxId: string;
   readonly internalNote: string;
   readonly meterRows: MeterAllocationRow[];
+  readonly extractionWarnings?: ReadonlyArray<unknown>;
+  readonly extractionSuspicious?: ReadonlyArray<unknown>;
+  readonly overallConfidence?: number;
+  readonly corrections?: ReadonlyArray<{
+    readonly field: string;
+    readonly oldValue: string | null;
+    readonly newValue: string | null;
+    readonly reason?: string;
+  }>;
   readonly updatedAt: string;
 }
 

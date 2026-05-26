@@ -57,6 +57,15 @@ export class ProcessInvoiceQueueBatchMapper {
       };
     }
 
+    const tenantId = isNonEmptyString(body.tenantId) ? body.tenantId : null;
+    if (!tenantId) {
+      return {
+        messageId: record.messageId,
+        pipelineInput: null,
+        skipReason: 'Missing tenantId in SQS body'
+      };
+    }
+
     const sk = ProcessInvoiceQueueBatchMapper.resolveSk(body, key);
     if (!sk) {
       return {
@@ -66,7 +75,20 @@ export class ProcessInvoiceQueueBatchMapper {
       };
     }
 
-    const pipelineInput: ProcessInvoicePipelineInputDto = { bucket, key, sk, orgId };
+    const invoiceId = isNonEmptyString(body.invoiceId)
+      ? body.invoiceId
+      : sk.replace(/^INV#/, '');
+    const correlationId = isNonEmptyString(body.correlationId) ? body.correlationId : record.messageId;
+
+    const pipelineInput: ProcessInvoicePipelineInputDto = {
+      bucket,
+      key,
+      sk,
+      orgId,
+      tenantId,
+      invoiceId,
+      correlationId
+    };
     return { messageId: record.messageId, pipelineInput };
   }
 

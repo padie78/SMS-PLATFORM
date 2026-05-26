@@ -39,7 +39,8 @@ export type InvoiceAppSyncFieldName =
   | 'commitInvoiceLifecycle'
   | 'rejectInvoice'
   | 'retryInvoiceProcessing'
-  | 'getInvoiceLifecycle';
+  | 'getInvoiceLifecycle'
+  | 'getInvoiceWipSnapshot';
 
 export interface InvoiceAppSyncAuthContext {
   readonly tenantId: string;
@@ -81,7 +82,8 @@ const KNOWN_FIELDS: ReadonlySet<InvoiceAppSyncFieldName> = new Set([
   'commitInvoiceLifecycle',
   'rejectInvoice',
   'retryInvoiceProcessing',
-  'getInvoiceLifecycle'
+  'getInvoiceLifecycle',
+  'getInvoiceWipSnapshot'
 ]);
 
 export function isInvoiceAppSyncFieldName(name: string): name is InvoiceAppSyncFieldName {
@@ -93,7 +95,7 @@ export class HandleInvoiceAppSyncRequestUseCase {
 
   async execute(
     input: HandleInvoiceAppSyncRequestInput
-  ): Promise<InvoiceMutationResponse | InvoiceLifecycleSnapshot | null> {
+  ): Promise<InvoiceMutationResponse | Record<string, unknown> | null> {
     if (!isInvoiceAppSyncFieldName(input.fieldName)) {
       throw new ApplicationValidationError(
         `handleInvoiceAppSyncRequest: unsupported fieldName "${input.fieldName}"`
@@ -112,8 +114,28 @@ export class HandleInvoiceAppSyncRequestUseCase {
       case 'retryInvoiceProcessing':
         return this.handleRetry(input);
       case 'getInvoiceLifecycle':
-        return this.handleGetLifecycle(input);
+        return this.mapLifecycleResponse(await this.handleGetLifecycle(input));
+      case 'getInvoiceWipSnapshot':
+        return this.handleGetWipSnapshot(input);
     }
+  }
+
+  private mapLifecycleResponse(snapshot: InvoiceLifecycleSnapshot | null): Record<string, unknown> | null {
+    if (!snapshot) return null;
+    const meta = snapshot.meta;
+    return {
+      invoiceId: meta.invoiceId,
+      tenantId: meta.tenantId,
+      orgId: meta.orgId,
+      status: meta.status,
+      version: meta.version,
+      createdAt: meta.createdAt,
+      updatedAt: meta.updatedAt,
+      snapshot: meta.snapshot,
+      pointers: meta.pointers,
+      latestExtractionDraft: snapshot.latestExtractionDraft,
+      goldenRecord: snapshot.goldenRecord
+    };
   }
 
   private async handleCreateDraft(
@@ -227,5 +249,28 @@ export class HandleInvoiceAppSyncRequestUseCase {
       orgId: input.auth.orgId,
       invoiceId
     });
+  }
+
+  private async handleGetWipSnapshot(
+    input: HandleInvoiceAppSyncRequestInput
+  ): Promise<Record<string, unknown> | null> {
+    const invoiceId = String(input.args.invoiceId ?? '').trim();
+    if (!invoiceId) {
+      throw new ApplicationValidationError('getInvoiceWipSnapshot: invoiceId required');
+    }
+    const snapshot = await this.deps.repository.getLifecycleSnapshot({
+      tenantId: input.auth.tenantId,
+      orgId: input.auth.orgId,
+      invoiceId
+    });
+    if (!snapshot?.meta) return null;
+    return {
+      invoiceId: snapshot.meta.invoiceId,
+      version: snapshot.meta.version,
+      status: snapshot.meta.status,
+      snapshot: snapshot.meta.snapshot,
+      latestExtractionDraft: snapshot.latestExtractionDraft,
+      wipExpiresAt: snapshot.meta.wipExpiresAt ?? null
+    };
   }
 }

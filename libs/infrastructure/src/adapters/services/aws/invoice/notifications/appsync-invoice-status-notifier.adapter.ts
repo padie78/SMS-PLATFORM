@@ -9,11 +9,12 @@ import type {
 import { InfrastructureConfigError } from '../../../../../exceptions/infrastructure-config.error.js';
 
 const MUTATION = `
-  mutation UpdateStatus($id: ID!, $status: InvoiceStatus!, $data: AWSJSON, $msg: String) {
+  mutation UpdateStatus($id: ID!, $status: String!, $data: AWSJSON, $msg: String) {
     updateInvoiceStatus(id: $id, status: $status, extractedData: $data, message: $msg) {
       id
       status
       extractedData
+      message
     }
   }
 `.trim();

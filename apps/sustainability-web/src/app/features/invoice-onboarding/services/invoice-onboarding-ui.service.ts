@@ -31,6 +31,13 @@ export class InvoiceOnboardingUiService {
   readonly deviationAcknowledged = signal(false);
   readonly meterRows = signal<MeterAllocationRow[]>([]);
 
+  readonly wipWarnings = computed(
+    () => this.wipStore.getSnapshot()?.extractionWarnings ?? []
+  );
+  readonly wipSuspicious = computed(
+    () => this.wipStore.getSnapshot()?.extractionSuspicious ?? []
+  );
+
   readonly branchOptions = INVOICE_HIERARCHY_BRANCHES.map((b) => ({
     label: b.label,
     value: b.value
@@ -168,8 +175,47 @@ export class InvoiceOnboardingUiService {
       await this.pipeline.commitToBackend();
       this.computeSuccessCo2FromInvoice();
       this.showSuccess.set(true);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/version conflict|InvoiceVersionConflict/i.test(msg)) {
+        throw new Error('VERSION_CONFLICT: Otra sesión modificó esta factura. Recarga o mantén tus cambios.');
+      }
+      throw e;
     } finally {
       this.isCommitting.set(false);
+    }
+  }
+
+  async rejectInvoice(reason: string): Promise<void> {
+    await this.pipeline.rejectCurrentInvoice(reason);
+    this.resetFlow();
+  }
+
+  async retryAiProcessing(): Promise<void> {
+    await this.pipeline.retryCurrentInvoice('Usuario solicitó reintento IA');
+    this.ocrSimulating.set(true);
+    this.ocrProgress.set(12);
+  }
+
+  async reloadFromBackend(): Promise<void> {
+    const wip = this.wipStore.getSnapshot();
+    if (!wip?.invoiceId) return;
+    const snap = await this.pipeline.fetchWipFromBackend(wip.invoiceId);
+    const latest = snap?.['latestExtractionDraft'];
+    if (latest && typeof latest === 'object') {
+      const draft = latest as Record<string, unknown>;
+      const vendor = (draft['vendor'] as { name?: { value?: string } })?.name?.value ?? '';
+      this.invoiceState.patchExtractedOptimistic({
+        vendor,
+        invoiceNumber: String((draft['invoiceNumber'] as { value?: string })?.value ?? ''),
+        invoiceDate: String((draft['invoiceDate'] as { value?: string })?.value ?? ''),
+        total: Number((draft['totalAmount'] as { numericValue?: number })?.numericValue ?? 0),
+        consumption: Number((draft['consumption'] as { value?: { numericValue?: number } })?.value?.numericValue ?? 0),
+        currency: String((draft['currency'] as { value?: string })?.value ?? 'EUR'),
+        date: '',
+        lines: [],
+        confidence: Number(draft['overallConfidence'] ?? 0.8)
+      });
     }
   }
 

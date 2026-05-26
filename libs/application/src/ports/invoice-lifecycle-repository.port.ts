@@ -16,7 +16,8 @@ import type {
   InvoiceAuditEntryItem,
   InvoiceExtractionDraft,
   InvoiceLifecycleItem,
-  InvoiceLifecycleState
+  InvoiceLifecycleState,
+  InvoiceLookupRefItem
 } from '@sms/common';
 import type { InvoiceGoldenRecord } from '../use-cases/invoice/types/invoice-golden-record.types.js';
 
@@ -115,9 +116,26 @@ export interface InvoiceLifecycleSnapshot {
   readonly goldenRecord: InvoiceGoldenRecord | null;
 }
 
+/** Resultado de lookup por hash de documento (idempotencia createInvoiceDraft). */
+export interface InvoiceDocumentHashLookupResult {
+  readonly invoiceId: string;
+  readonly tenantId: string;
+  readonly orgId: string;
+  readonly version: number;
+  readonly status: InvoiceLifecycleState;
+}
+
 export interface IInvoiceLifecycleRepository {
   /** Crea el item META + audit inicial (idempotente vía `attribute_not_exists(SK)`). */
   createLifecycle(input: CreateInvoiceLifecycleInput): Promise<InvoiceLifecycleWriteResult>;
+
+  /** Resuelve tenant/org desde item LOOKUP#INV#<id> (dispatcher S3). */
+  getInvoiceLookupRef(invoiceId: string): Promise<InvoiceLookupRefItem | null>;
+
+  /** Idempotencia: busca invoice activa WIP con el mismo SHA-256. */
+  findActiveByDocumentHash(
+    documentHashSha256: string
+  ): Promise<InvoiceDocumentHashLookupResult | null>;
 
   /** Lee el snapshot (META + último draft + golden). Retorna `null` si no existe. */
   getLifecycleSnapshot(identity: InvoiceLifecycleIdentity): Promise<InvoiceLifecycleSnapshot | null>;

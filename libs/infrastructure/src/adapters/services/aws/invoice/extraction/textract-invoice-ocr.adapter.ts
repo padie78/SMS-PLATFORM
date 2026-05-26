@@ -1,6 +1,6 @@
 import { DetectDocumentTextCommand, TextractClient } from '@aws-sdk/client-textract';
 import type { Block } from '@aws-sdk/client-textract';
-import type { IInvoiceOcrService } from '@sms/application';
+import type { IInvoiceOcrService, IInvoiceOcrBlocksService, InvoiceOcrExtractionResult } from '@sms/application';
 
 const DEFAULT_REGION = 'eu-central-1';
 
@@ -9,8 +9,19 @@ export type TextractInvoiceOcrAdapterOptions = {
   readonly region?: string;
 };
 
-/** Adapter Textract: implementa `IInvoiceOcrService` con Detect Document Text. */
-export class TextractInvoiceOcrAdapter implements IInvoiceOcrService {
+const mapGeometry = (block: Block): InvoiceOcrExtractionResult['blocks'][number]['geometry'] | null => {
+  const box = block.Geometry?.BoundingBox;
+  if (!box) return null;
+  return {
+    left: box.Left ?? 0,
+    top: box.Top ?? 0,
+    width: box.Width ?? 0,
+    height: box.Height ?? 0
+  };
+};
+
+/** Adapter Textract: texto plano + blocks con geometry para highlights UI. */
+export class TextractInvoiceOcrAdapter implements IInvoiceOcrService, IInvoiceOcrBlocksService {
   private readonly client: TextractClient;
 
   constructor(options: TextractInvoiceOcrAdapterOptions = {}) {
@@ -20,6 +31,11 @@ export class TextractInvoiceOcrAdapter implements IInvoiceOcrService {
   }
 
   async extractText(bucket: string, key: string): Promise<string> {
+    const doc = await this.extractDocument(bucket, key);
+    return doc.rawText;
+  }
+
+  async extractDocument(bucket: string, key: string): Promise<InvoiceOcrExtractionResult> {
     const command = new DetectDocumentTextCommand({
       Document: { S3Object: { Bucket: bucket, Name: key } }
     });
@@ -27,15 +43,23 @@ export class TextractInvoiceOcrAdapter implements IInvoiceOcrService {
     const response = await this.client.send(command);
     const blocks: ReadonlyArray<Block> = response.Blocks ?? [];
 
-    const rawText = blocks
-      .filter((block) => block.BlockType === 'LINE' && typeof block.Text === 'string')
-      .map((block) => block.Text as string)
-      .join('\n');
+    const lineBlocks = blocks.filter(
+      (block) => block.BlockType === 'LINE' && typeof block.Text === 'string'
+    );
+
+    const rawText = lineBlocks.map((block) => block.Text as string).join('\n');
 
     if (!rawText.trim()) {
       throw new Error('Textract returned empty content. Verify the document is not an empty image.');
     }
 
-    return rawText;
+    const mappedBlocks = lineBlocks.map((block) => ({
+      text: block.Text as string,
+      confidence: typeof block.Confidence === 'number' ? block.Confidence / 100 : 0.5,
+      page: block.Page ?? 1,
+      geometry: mapGeometry(block) ?? { left: 0, top: 0, width: 0, height: 0 }
+    }));
+
+    return { rawText, blocks: mappedBlocks };
   }
 }

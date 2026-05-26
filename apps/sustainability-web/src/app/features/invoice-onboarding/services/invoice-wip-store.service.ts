@@ -93,6 +93,30 @@ export class InvoiceWipStoreService {
     this.patch({ extractionDraftVersion: version });
   }
 
+  setExtractionMeta(meta: {
+    warnings: unknown[];
+    suspiciousValues: unknown[];
+    overallConfidence: number;
+  }): void {
+    this.patch({
+      extractionWarnings: meta.warnings,
+      extractionSuspicious: meta.suspiciousValues,
+      overallConfidence: meta.overallConfidence
+    });
+  }
+
+  appendCorrection(correction: {
+    field: string;
+    oldValue: string | null;
+    newValue: string | null;
+    reason?: string;
+  }): void {
+    const current = this.snapshotSignal();
+    if (!current) return;
+    const corrections = [...(current.corrections ?? []), correction];
+    this.patch({ corrections });
+  }
+
   setEnergyType(energyType: EnergyServiceType): void {
     this.patch({ energyType });
   }

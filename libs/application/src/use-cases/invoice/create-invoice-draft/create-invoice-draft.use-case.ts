@@ -91,6 +91,22 @@ export class CreateInvoiceDraftUseCase {
       throw err;
     }
 
+    if (parsed.documentHashSha256) {
+      const existing = await this.deps.repository.findActiveByDocumentHash(
+        parsed.documentHashSha256
+      );
+      if (existing) {
+        return {
+          invoiceId: existing.invoiceId,
+          tenantId: existing.tenantId,
+          orgId: existing.orgId,
+          version: existing.version,
+          status: existing.status,
+          createdAt: this.deps.clock()
+        };
+      }
+    }
+
     const invoiceId = this.deps.invoiceIdGenerator();
     if (!invoiceId.trim()) {
       throw new ApplicationValidationError('createInvoiceDraft: id generator returned empty id');

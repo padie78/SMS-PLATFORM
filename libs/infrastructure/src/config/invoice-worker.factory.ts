@@ -9,7 +9,7 @@ import {
 import { AppSyncInvoiceStatusNotifierAdapter } from '../adapters/services/aws/invoice/notifications/appsync-invoice-status-notifier.adapter.js';
 import { BedrockInvoiceAiAnalyzerAdapter } from '../adapters/services/aws/invoice/extraction/bedrock-invoice-ai-analyzer.adapter.js';
 import { BedrockInvoiceCategoryClassifierAdapter } from '../adapters/services/aws/invoice/extraction/bedrock-invoice-category-classifier.adapter.js';
-import { DynamoInvoiceGoldenRecordRepository } from '../adapters/services/aws/invoice/extraction/dynamo-invoice-golden-record.repository.js';
+import { DynamoInvoiceLifecycleRepository } from '../adapters/database/repositories/dynamo-invoice-lifecycle.repository.js';
 import { TextractInvoiceOcrAdapter } from '../adapters/services/aws/invoice/extraction/textract-invoice-ocr.adapter.js';
 
 export type CreateProcessInvoiceQueueBatchUseCaseParams = {
@@ -41,7 +41,7 @@ export function createProcessInvoiceQueueBatchUseCase(
       region: params.classifierRegion
     }),
     aiAnalyzer: new BedrockInvoiceAiAnalyzerAdapter({ region: params.bedrockRegion }),
-    goldenRecordRepository: new DynamoInvoiceGoldenRecordRepository({
+    lifecycleRepository: new DynamoInvoiceLifecycleRepository({
       doc: params.doc,
       tableName: params.tableName
     }),

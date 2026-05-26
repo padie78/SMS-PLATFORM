@@ -8,7 +8,10 @@ export const InvoiceDispatchQueueMessageSchema = z.object({
   bucket: z.string().min(1),
   key: z.string().min(1),
   orgId: SmsIdSchema,
+  tenantId: z.string().min(1),
+  invoiceId: SmsIdSchema,
   sk: InvoiceSkSchema,
+  correlationId: z.string().min(1),
   timestamp: z
     .string()
     .min(1)

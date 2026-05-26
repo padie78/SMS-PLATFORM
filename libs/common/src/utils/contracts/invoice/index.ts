@@ -86,11 +86,23 @@ export {
   InvoiceSuspiciousValueSchema,
   classifyConfidence,
   buildConfidenceField,
+  InvoiceBoundingBoxSchema,
+  InvoiceFieldGeometrySchema,
   type InvoiceConfidenceLevel,
   type InvoiceConfidenceField,
+  type InvoiceBoundingBox,
+  type InvoiceFieldGeometry,
   type InvoiceExtractionWarning,
   type InvoiceSuspiciousValue
 } from './invoice-confidence.dto';
+
+export {
+  INVOICE_LOOKUP_PK_PREFIX,
+  InvoiceLookupRefItemSchema,
+  buildInvoiceLookupPk,
+  buildInvoiceLookupRefItem,
+  type InvoiceLookupRefItem
+} from './invoice-lookup-ref.dto';
 
 // ── Extraction draft (item DDB INV#..#EXTRACTION#v<n>) ──────────────────────
 export {

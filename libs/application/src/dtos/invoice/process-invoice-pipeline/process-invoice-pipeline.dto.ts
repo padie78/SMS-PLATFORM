@@ -1,4 +1,4 @@
-import type { InvoiceGoldenRecord } from '../../../use-cases/invoice/types/invoice-golden-record.types.js';
+import type { InvoiceExtractionDraft } from '@sms/common';
 
 /** Input plano del pipeline de procesamiento de una factura individual. */
 export interface ProcessInvoicePipelineInputDto {
@@ -6,10 +6,14 @@ export interface ProcessInvoicePipelineInputDto {
   readonly key: string;
   readonly sk: string;
   readonly orgId: string;
+  readonly tenantId: string;
+  readonly invoiceId: string;
+  readonly correlationId: string;
 }
 
-/** Output exitoso del pipeline: el Golden Record persistido. */
+/** Output exitoso del pipeline: extraction draft persistido. */
 export interface ProcessInvoicePipelineOutputDto {
-  readonly status: 'READY_FOR_REVIEW' | 'AI_VALIDATION_REQUIRED';
-  readonly goldenRecord: InvoiceGoldenRecord;
+  readonly status: 'AI_VALIDATION_REQUIRED';
+  readonly invoiceId: string;
+  readonly extractionDraft: InvoiceExtractionDraft;
 }

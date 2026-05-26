@@ -1,0 +1,35 @@
+<div class="pdf-canvas-wrap relative inline-block max-w-full" [style.width.px]="renderWidth() || null">
+  <canvas #pdfCanvas class="rounded-xl border border-white/10 bg-white max-w-full h-auto block"></canvas>
+  <svg
+    class="absolute inset-0 pointer-events-none"
+    [attr.width]="renderWidth()"
+    [attr.height]="renderHeight()"
+    aria-hidden="true"
+  >
+    @for (h of highlights(); track h.fieldKey) {
+      @if (h.geometry?.boundingBox) {
+        <rect
+          [attr.x]="(h.geometry!.boundingBox.left * renderWidth())"
+          [attr.y]="(h.geometry!.boundingBox.top * renderHeight())"
+          [attr.width]="(h.geometry!.boundingBox.width * renderWidth())"
+          [attr.height]="(h.geometry!.boundingBox.height * renderHeight())"
+          fill="transparent"
+          stroke-width="2"
+        />
+      }
+    }
+  </svg>
+  <div class="absolute inset-0">
+    @for (h of highlights(); track h.fieldKey) {
+      <div
+        class="absolute rounded-sm transition-shadow cursor-pointer"
+        [ngStyle]="boxStyle(h)"
+        (mouseenter)="onFieldEnter(h.fieldKey)"
+        (mouseleave)="onFieldLeave()"
+      ></div>
+    }
+  </div>
+  @if (loadError()) {
+    <p class="text-xs text-red-400 mt-2">{{ loadError() }}</p>
+  }
+</div>

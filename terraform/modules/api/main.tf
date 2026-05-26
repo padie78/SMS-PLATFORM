@@ -85,7 +85,10 @@ resource "aws_appsync_resolver" "mutation_resolvers" {
     "updateNode",
     "deleteNode",
     "createInvoiceDraft",
-    "commitInvoiceLifecycle"
+    "commitInvoiceLifecycle",
+    "confirmInvoiceExtraction",
+    "rejectInvoice",
+    "retryInvoiceProcessing"
   ])
 
   api_id      = aws_appsync_graphql_api.api.id
@@ -124,7 +127,7 @@ resource "aws_appsync_resolver" "get_presigned_url" {
 }
 
 resource "aws_appsync_resolver" "api_lambda_queries" {
-  for_each = toset(["getTree", "getNode", "getInvoice", "getInvoiceLifecycle"])
+  for_each = toset(["getTree", "getNode", "getInvoice", "getInvoiceLifecycle", "getInvoiceWipSnapshot"])
 
   api_id      = aws_appsync_graphql_api.api.id
   type        = "Query"
@@ -228,8 +231,43 @@ resource "aws_appsync_resolver" "update_status_passthrough" {
 }
 EOF
 
-  # Response Mapping Template: Devuelve el payload como resultado
+  # Response: incluye invoiceId para filtros de suscripción AppSync
   response_template = <<EOF
-$util.toJson($context.result)
+{
+  "id": "$context.arguments.id",
+  "invoiceId": "$context.arguments.id",
+  "status": "$context.arguments.status",
+  "extractedData": $util.toJson($context.arguments.extractedData),
+  "message": $util.toJson($context.arguments.message),
+  "vendor": null,
+  "totalAmount": null
+}
 EOF
+}
+
+resource "aws_appsync_resolver" "invoice_subscriptions" {
+  for_each = toset([
+    "onInvoiceProcessingUpdated",
+    "onInvoiceExtractionCompleted",
+    "onInvoiceValidationRequired",
+    "onInvoiceCompleted",
+    "onInvoiceFailed",
+    "onInvoiceUpdated"
+  ])
+
+  api_id      = aws_appsync_graphql_api.api.id
+  type        = "Subscription"
+  field       = each.key
+  data_source = aws_appsync_datasource.passthrough_ds.name
+
+  request_template = <<EOF
+{
+  "version": "2018-05-29",
+  "payload": {}
+}
+EOF
+
+  response_template = "$util.toJson($context.result)"
+
+  depends_on = [aws_appsync_graphql_api.api]
 }

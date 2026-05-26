@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { InvoiceValidationSplitViewComponent } from '../invoice-validation-split-view/invoice-validation-split-view.component';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { TagModule } from 'primeng/tag';
@@ -34,7 +34,8 @@ const ENERGY_OPTIONS: ReadonlyArray<{ label: string; value: EnergyServiceType }>
     ReactiveFormsModule,
     InputTextModule,
     ButtonModule,
-    TagModule
+    TagModule,
+    InvoiceValidationSplitViewComponent
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './invoice-onboarding-step-form.component.html'
@@ -42,17 +43,16 @@ const ENERGY_OPTIONS: ReadonlyArray<{ label: string; value: EnergyServiceType }>
 export class InvoiceOnboardingStepFormComponent implements OnInit, OnDestroy {
   private readonly fb = inject(FormBuilder);
   private readonly invoiceState = inject(InvoiceStateService);
-  private readonly sanitizer = inject(DomSanitizer);
-
   readonly onboarding = inject(InvoiceOnboardingUiService);
   readonly energyOptions = ENERGY_OPTIONS;
 
   @Output() readonly continue = new EventEmitter<void>();
 
-  readonly safePdfUrl = signal<SafeResourceUrl | null>(null);
+  readonly pdfFile = signal<File | null>(null);
+  readonly activeField = signal<string | null>(null);
   readonly buildingOptions = signal<Array<{ label: string; value: string }>>([]);
-
-  private rawBlobUrl: string | null = null;
+  readonly isRejecting = signal(false);
+  readonly isRetrying = signal(false);
 
   readonly form = this.fb.nonNullable.group({
     vendor: ['', [Validators.required, Validators.minLength(2)]],
@@ -70,8 +70,7 @@ export class InvoiceOnboardingStepFormComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     const snap = this.invoiceState.getSnapshot();
     if (snap.file) {
-      this.rawBlobUrl = URL.createObjectURL(snap.file);
-      this.safePdfUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(this.rawBlobUrl));
+      this.pdfFile.set(snap.file);
     }
     const d = snap.extractedData;
     const h = snap.hierarchy;
@@ -99,10 +98,33 @@ export class InvoiceOnboardingStepFormComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    if (this.rawBlobUrl) {
-      URL.revokeObjectURL(this.rawBlobUrl);
-      this.rawBlobUrl = null;
+    this.pdfFile.set(null);
+  }
+
+  async rejectInvoice(): Promise<void> {
+    this.isRejecting.set(true);
+    try {
+      await this.onboarding.rejectInvoice('Rechazada por el usuario en validación');
+    } finally {
+      this.isRejecting.set(false);
     }
+  }
+
+  async retryAi(): Promise<void> {
+    this.isRetrying.set(true);
+    try {
+      await this.onboarding.retryAiProcessing();
+    } finally {
+      this.isRetrying.set(false);
+    }
+  }
+
+  warnings(): ReadonlyArray<{ code?: string; field?: string; message?: string }> {
+    return (this.onboarding.wipWarnings() as Array<{ code?: string; field?: string; message?: string }>) ?? [];
+  }
+
+  suspicious(): ReadonlyArray<{ field?: string; reason?: string; severity?: string }> {
+    return (this.onboarding.wipSuspicious() as Array<{ field?: string; reason?: string; severity?: string }>) ?? [];
   }
 
   submit(): void {
