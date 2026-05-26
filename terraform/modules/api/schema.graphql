@@ -241,11 +241,11 @@ type Subscription {
     @aws_subscribe(mutations: ["updateInvoiceStatus"])
     @aws_api_key @aws_cognito_user_pools
 
-  onInvoiceExtractionCompleted(invoiceId: ID!): InvoiceExtractionPayload
+  onInvoiceExtractionCompleted(invoiceId: ID!): Invoice
     @aws_subscribe(mutations: ["updateInvoiceStatus"])
     @aws_api_key @aws_cognito_user_pools
 
-  onInvoiceValidationRequired(invoiceId: ID!): InvoiceExtractionPayload
+  onInvoiceValidationRequired(invoiceId: ID!): Invoice
     @aws_subscribe(mutations: ["updateInvoiceStatus"])
     @aws_api_key @aws_cognito_user_pools
 

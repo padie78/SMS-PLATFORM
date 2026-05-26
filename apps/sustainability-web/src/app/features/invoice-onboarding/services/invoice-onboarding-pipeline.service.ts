@@ -280,10 +280,23 @@ export class InvoiceOnboardingPipelineService {
       data?: { onInvoiceExtractionCompleted?: Record<string, unknown> };
       value?: { data?: { onInvoiceExtractionCompleted?: Record<string, unknown> } };
     };
-    return (
+    const eventPayload =
       root.data?.onInvoiceExtractionCompleted ??
-      root.value?.data?.onInvoiceExtractionCompleted
-    );
+      root.value?.data?.onInvoiceExtractionCompleted;
+
+    if (!eventPayload) {
+      return undefined;
+    }
+
+    const extracted = this.parser.parse(eventPayload['extractedData']);
+    return {
+      ...extracted,
+      id: eventPayload['id'],
+      invoiceId: eventPayload['invoiceId'] ?? eventPayload['id'],
+      status: eventPayload['status'],
+      message: eventPayload['message'],
+      extractedData: eventPayload['extractedData']
+    };
   }
 
   private pickInvoiceUpdatedPayload(

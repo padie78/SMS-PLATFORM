@@ -112,22 +112,11 @@ export class AppSyncApiService {
     const subscription = `
       subscription OnInvoiceExtractionCompleted($invoiceId: ID!) {
         onInvoiceExtractionCompleted(invoiceId: $invoiceId) {
+          id
           invoiceId
           status
+          extractedData
           message
-          extractionVersion
-          overallConfidence
-          vendor
-          vendorTaxId
-          invoiceNumber
-          invoiceDate
-          totalAmount
-          currency
-          consumptionValue
-          consumptionUnit
-          warnings
-          suspiciousValues
-          fields
         }
       }
     `;
