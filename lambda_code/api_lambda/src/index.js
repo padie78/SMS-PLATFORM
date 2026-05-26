@@ -1,34 +1,32 @@
 /**
- * Composition root: API Lambda (AppSync resolver — configuración multi-tenant).
+ * Composition root: API Lambda (AppSync resolver — node config + invoice lifecycle v2).
  *
- * Resolvers expuestos: `saveNode`, `updateNode`, `deleteNode`, `getNode`,
- * `getTree`, `getInvoice` (stub). La lógica vive en `@sms/application`
- * (`HandleAppSyncRequestUseCase`) y `@sms/infrastructure`
- * (`DynamoNodeConfigRepository`, `appsync-event.parser`).
+ * Resolvers:
+ *  - Node: saveNode, updateNode, deleteNode, getNode, getTree, getInvoice (stub)
+ *  - Invoice v2: createInvoiceDraft, confirmInvoiceExtraction, rejectInvoice,
+ *    retryInvoiceProcessing, getInvoiceLifecycle
  *
- * Variables de entorno relevantes:
- *  - DYNAMO_TABLE / DATABASE_NAME : tabla single-table (obligatoria).
- *  - DEFAULT_ORGAN_SCOPE_ID       : org fallback cuando no hay claims.
- *  - LAMBDA_DEFAULT_TENANT_ID / DEV_TENANT_ID / ALLOW_TENANT_FALLBACK_FROM_SUB
- *                                  : modo desarrollo (NO PROD).
+ * Variables de entorno:
+ *  - DYNAMO_TABLE / DATABASE_NAME (obligatoria)
+ *  - SQS_QUEUE_URL (retryInvoiceProcessing → re-enqueue worker)
+ *  - DEFAULT_ORGAN_SCOPE_ID, ALLOW_TENANT_FALLBACK_FROM_SUB (dev)
  */
 import {
-  createAppSyncNodeConfigHandler,
+  createAppSyncApiCombinedHandler,
   createDynamoDocumentClient
-} from "@sms/infrastructure";
+} from '@sms/infrastructure';
 
 const tableName = process.env.DYNAMO_TABLE || process.env.DATABASE_NAME;
 if (!tableName) {
-  // Fail-fast: nunca hard-codear nombre de tabla. Un fallback silencioso
-  // en producción puede provocar escrituras cruzadas entre entornos.
   throw new Error(
-    "api_lambda misconfigured: DYNAMO_TABLE (o DATABASE_NAME) es obligatorio."
+    'api_lambda misconfigured: DYNAMO_TABLE (o DATABASE_NAME) es obligatorio.'
   );
 }
 
 const doc = createDynamoDocumentClient();
 
-export const handler = createAppSyncNodeConfigHandler({
+export const handler = createAppSyncApiCombinedHandler({
   doc,
-  tableName
+  tableName,
+  sqsQueueUrl: process.env.SQS_QUEUE_URL
 });

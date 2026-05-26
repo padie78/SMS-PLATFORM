@@ -1,5 +1,14 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  OnInit,
+  computed,
+  effect,
+  inject,
+  signal
+} from '@angular/core';
 import { BreadcrumbModule } from 'primeng/breadcrumb';
 import type { MenuItem } from 'primeng/api';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
@@ -195,7 +204,10 @@ function smsNodeStableLocationId(node: SmsLocationNode): string {
           <div
             class="sms-loc-layout__detail overflow-auto p-3 sm:p-4 md:p-5 lg:p-7"
           >
-            <sms-detail-explorer [node]="location.selectedNode()" />
+            <sms-detail-explorer
+              [node]="location.selectedNode()"
+              [loading]="detailLoading()"
+            />
           </div>
         </div>
       </section>
@@ -207,6 +219,51 @@ export class LocationManagerPage implements OnInit {
   private readonly dialog = inject(DialogService);
   private readonly costCenterRegistry = inject(OrganizationCostCenterRegistryService);
   private readonly notify = inject(NotificationService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  /**
+   * Loading "simulado" del panel de detalle cuando el usuario cambia de nodo
+   * en el árbol. Los datos del nodo ya están en memoria, pero un skeleton
+   * de ~350 ms da percepción premium de "cargando registro" y elimina el
+   * cambio brusco entre forms (que con OnPush + diferentes tipos de nodo
+   * se nota como un "salto en blanco").
+   *
+   * Si el usuario hace clics rápidos sucesivos, cada uno reinicia el timer
+   * gracias al `onCleanup` del effect — el último cambio gana, no se acumulan
+   * skeletons.
+   */
+  private readonly DETAIL_SKELETON_MS = 350;
+  private readonly detailLoadingSig = signal(false);
+  /** Lectura pública del signal (consumido por el template del detail panel). */
+  readonly detailLoading = this.detailLoadingSig.asReadonly();
+
+  constructor() {
+    // Efecto reactivo: dispara el skeleton cada vez que cambia el nodo
+    // seleccionado en el store. `onCleanup` cancela timers anteriores cuando
+    // la selección cambia de nuevo antes de que termine el delay actual.
+    effect(
+      (onCleanup) => {
+        const sel = this.location.selectedNode();
+        // No mostramos skeleton cuando se "deselecciona" (vuelta a empty state).
+        if (!sel) {
+          this.detailLoadingSig.set(false);
+          return;
+        }
+
+        this.detailLoadingSig.set(true);
+        const id = window.setTimeout(() => {
+          this.detailLoadingSig.set(false);
+        }, this.DETAIL_SKELETON_MS);
+
+        onCleanup(() => window.clearTimeout(id));
+      },
+      { allowSignalWrites: true }
+    );
+
+    // Garantizamos limpieza si el componente se destruye con un timer pendiente.
+    // (effect's onCleanup ya lo cubre, pero defensivo ante futuros refactors.)
+    this.destroyRef.onDestroy(() => this.detailLoadingSig.set(false));
+  }
 
   readonly breadcrumbItems = computed<MenuItem[]>(() => {
     const nodes = this.location.breadcrumb();

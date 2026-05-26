@@ -89,20 +89,20 @@ export class AppSyncApiService {
     return data.createInvoice;
   }
 
-  onInvoiceUpdated(invoiceId: string): Observable<InvoiceUpdatedGraphqlEvent> {
+  onInvoiceUpdated(_invoiceId: string): Observable<InvoiceUpdatedGraphqlEvent> {
     const subscription = `
-      subscription OnInvoiceUpdated($id: ID!) {
-        onInvoiceUpdated(id: $id) {
+      subscription OnInvoiceUpdated {
+        onInvoiceUpdated {
           id
           status
           extractedData
+          message
         }
       }
     `;
 
     return this.client.graphql({
       query: subscription,
-      variables: { id: invoiceId },
       authMode: 'userPool'
     }) as Observable<InvoiceUpdatedGraphqlEvent>;
   }

@@ -1211,6 +1211,17 @@ app-root {
   background: transparent !important;
 }
 
+.invoice-create-flow .invoice-stepper-modern .p-stepper-header {
+  padding: 0.5rem 0.25rem;
+}
+
+.invoice-create-flow .invoice-stepper-modern .p-stepper-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .loading-overlay {
   animation: fadeIn 0.3s ease-in-out;
 }

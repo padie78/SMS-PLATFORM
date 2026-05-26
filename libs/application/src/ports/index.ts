@@ -14,3 +14,4 @@ export * from './s3-presigned-upload-url-service.port.js';
 export * from './node-config-repository.port.js';
 export * from './invoice-processing-queue-writer.port.js';
 export * from './domain-event-publisher.port.js';
+export * from './invoice-lifecycle-repository.port.js';

@@ -1,123 +1,178 @@
-@if (!onboarding.isOCR()) {
-  <p-splitter
-    [style]="{ height: '560px' }"
-    [panelSizes]="[38, 62]"
-    styleClass="rounded-xl overflow-hidden border border-slate-200"
+<div class="invoice-data-step grid grid-cols-1 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-4 xl:gap-5">
+  <aside
+    class="invoice-pdf-pane rounded-2xl overflow-hidden border border-slate-200 bg-slate-950 shadow-inner flex flex-col min-h-[480px] xl:min-h-[640px] xl:max-h-[78vh]"
+    aria-label="Visor de factura"
   >
-    <ng-template pTemplate>
-      <div class="flex flex-col h-full min-h-0 bg-slate-950 p-4 md:p-5">
-        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider m-0 mb-2">Visor PDF</p>
-        @if (safePdfUrl()) {
-          <iframe title="Factura PDF" class="w-full flex-1 min-h-0 rounded-lg border-0 bg-slate-900" [src]="safePdfUrl()!"></iframe>
-        } @else {
-          <div class="flex flex-col items-center justify-center flex-1 text-slate-500 text-sm p-4 text-center">
-            <i class="pi pi-file-pdf text-4xl mb-3 opacity-40" aria-hidden="true"></i>
-            Sin archivo PDF en contexto.
-          </div>
+    <header class="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/5 bg-slate-900/80">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-300">
+          <i class="pi pi-file-pdf text-xs" aria-hidden="true"></i>
+        </span>
+        <div class="min-w-0">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-emerald-300/90 m-0">Factura</p>
+          <p class="text-[11px] text-slate-400 m-0 mt-0.5 truncate">Documento fuente cargado</p>
+        </div>
+      </div>
+      <p-tag
+        value="Fuente de verdad"
+        severity="info"
+        [rounded]="true"
+        styleClass="text-[10px] uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700"
+      />
+    </header>
+    <div class="flex-1 min-h-0 bg-slate-900 p-3 md:p-4">
+      @if (safePdfUrl()) {
+        <iframe
+          title="Factura PDF"
+          class="w-full h-full min-h-[420px] rounded-xl border border-white/5 bg-slate-100"
+          [src]="safePdfUrl()!"
+        ></iframe>
+      } @else {
+        <div class="flex flex-col items-center justify-center h-full text-slate-500 text-sm p-6 text-center">
+          <i class="pi pi-file-pdf text-5xl mb-3 opacity-30" aria-hidden="true"></i>
+          <p class="m-0 font-semibold text-slate-300">Aún no hay PDF en contexto</p>
+          <p class="m-0 mt-2 text-xs text-slate-500">Vuelve al paso de ingesta para subir el documento.</p>
+        </div>
+      }
+    </div>
+  </aside>
+
+  <section
+    class="invoice-form-pane rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col min-h-[480px] xl:max-h-[78vh] overflow-hidden"
+    aria-label="Datos de la factura"
+  >
+    <header class="px-5 md:px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-white to-slate-50/80">
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div class="min-w-0">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-emerald-700 m-0">
+            {{ onboarding.isOCR() ? 'Revisión IA' : 'Carga manual' }}
+          </p>
+          <h3 class="text-lg font-black text-slate-900 m-0 mt-1">Datos de la factura</h3>
+          <p class="text-xs text-slate-500 m-0 mt-1">
+            {{ onboarding.isOCR()
+              ? 'Confirma o corrige los campos extraídos automáticamente.'
+              : 'Completa los datos siguiendo la factura del visor.' }}
+          </p>
+        </div>
+        @if (onboarding.isOCR()) {
+          <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-700 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider border border-emerald-100">
+            <i class="pi pi-sparkles text-[10px]" aria-hidden="true"></i>
+            Sugerencias IA
+          </span>
         }
       </div>
-    </ng-template>
-    <ng-template pTemplate>
-      <form [formGroup]="form" class="flex flex-col gap-3 p-5 md:p-6 h-full overflow-auto" (ngSubmit)="submit()">
-        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider m-0">Datos documentales</p>
+    </header>
+
+    <form
+      [formGroup]="form"
+      class="flex flex-col gap-5 p-5 md:p-6 flex-1 min-h-0 overflow-auto"
+      (ngSubmit)="submit()"
+    >
+      <fieldset class="flex flex-col gap-3">
+        <legend class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Documento</legend>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-bold text-slate-600 uppercase" for="inv-vendor">Proveedor</label>
-            <input pInputText id="inv-vendor" class="w-full" formControlName="vendor" />
+          <div class="flex flex-col gap-1 md:col-span-2">
+            <div class="flex items-center justify-between">
+              <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide" for="inv-vendor">Proveedor</label>
+              @if (onboarding.isOCR()) {
+                <p-tag value="IA" severity="info" [rounded]="true" styleClass="text-[10px]" />
+              }
+            </div>
+            <input pInputText id="inv-vendor" class="w-full" formControlName="vendor" placeholder="Ej. EDESUR S.A." />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-xs font-bold text-slate-600 uppercase" for="inv-num">Nº factura</label>
+            <div class="flex items-center justify-between">
+              <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide" for="inv-tax">CUIT / Tax ID</label>
+              @if (onboarding.isOCR()) {
+                <p-tag value="IA" severity="info" [rounded]="true" styleClass="text-[10px]" />
+              }
+            </div>
+            <input pInputText id="inv-tax" class="w-full" formControlName="vendorTaxId" placeholder="30-12345678-9" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center justify-between">
+              <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide" for="inv-num">Nº factura</label>
+              @if (onboarding.isOCR()) {
+                <p-tag value="IA" severity="info" [rounded]="true" styleClass="text-[10px]" />
+              }
+            </div>
             <input pInputText id="inv-num" class="w-full" formControlName="invoiceNumber" />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-xs font-bold text-slate-600 uppercase" for="inv-start">Periodo inicio</label>
-            <input pInputText id="inv-start" class="w-full" formControlName="billingPeriodStart" />
+            <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide" for="inv-start">Periodo inicio</label>
+            <input pInputText id="inv-start" type="date" class="w-full" formControlName="billingPeriodStart" />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-xs font-bold text-slate-600 uppercase" for="inv-end">Periodo fin</label>
-            <input pInputText id="inv-end" class="w-full" formControlName="billingPeriodEnd" />
+            <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide" for="inv-end">Periodo fin</label>
+            <input pInputText id="inv-end" type="date" class="w-full" formControlName="billingPeriodEnd" />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-xs font-bold text-slate-600 uppercase" for="inv-total">Monto total (EUR)</label>
-            <input pInputText id="inv-total" type="number" class="w-full" formControlName="total" />
+            <div class="flex items-center justify-between">
+              <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide" for="inv-total">Monto total</label>
+              @if (onboarding.isOCR()) {
+                <p-tag value="IA" severity="info" [rounded]="true" styleClass="text-[10px]" />
+              }
+            </div>
+            <input pInputText id="inv-total" type="number" step="0.01" class="w-full" formControlName="total" />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-xs font-bold text-slate-600 uppercase" for="inv-kwh">Consumo (kWh)</label>
-            <input pInputText id="inv-kwh" type="number" class="w-full" formControlName="consumption" />
+            <div class="flex items-center justify-between">
+              <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide" for="inv-kwh">Consumo (kWh)</label>
+              @if (onboarding.isOCR()) {
+                <p-tag value="IA" severity="info" [rounded]="true" styleClass="text-[10px]" />
+              }
+            </div>
+            <input pInputText id="inv-kwh" type="number" step="0.01" class="w-full" formControlName="consumption" />
           </div>
         </div>
-        <div class="flex justify-end gap-2 mt-2">
-          <p-button
-            type="submit"
-            label="Continuar"
-            icon="pi pi-arrow-right"
-            iconPos="right"
-            styleClass="p-button-emerald rounded-xl text-xs font-bold px-5"
-            [disabled]="form.invalid"
-          />
+      </fieldset>
+
+      <fieldset class="flex flex-col gap-3 border-t border-slate-100 pt-4">
+        <legend class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Ubicación operativa</legend>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide" for="inv-branch">Sucursal</label>
+            <select id="inv-branch" class="sms-native-select w-full" formControlName="branchId">
+              <option value="">Seleccionar…</option>
+              @for (b of onboarding.branchOptions; track b.value) {
+                <option [value]="b.value">{{ b.label }}</option>
+              }
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide" for="inv-building">Edificio</label>
+            <select id="inv-building" class="sms-native-select w-full" formControlName="buildingId" [disabled]="!form.controls.branchId.value">
+              <option value="">Seleccionar…</option>
+              @for (b of buildingOptions(); track b.value) {
+                <option [value]="b.value">{{ b.label }}</option>
+              }
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide" for="inv-energy">Servicio</label>
+            <select id="inv-energy" class="sms-native-select w-full" formControlName="energyType">
+              @for (e of energyOptions; track e.value) {
+                <option [value]="e.value">{{ e.label }}</option>
+              }
+            </select>
+          </div>
         </div>
-      </form>
-    </ng-template>
-  </p-splitter>
-} @else {
-  <form [formGroup]="form" class="flex flex-col gap-3 max-w-4xl w-full mx-auto" (ngSubmit)="submit()">
-    <p class="text-xs font-bold uppercase tracking-wider text-slate-600 m-0">Validación OCR</p>
-    <p class="text-sm text-slate-500 m-0 leading-relaxed">
-      Revisa los campos sugeridos por IA antes de asignar medidores.
-    </p>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-      <div class="flex flex-col gap-1">
-        <div class="flex items-center gap-2 flex-wrap">
-          <label class="text-xs font-bold text-slate-600 uppercase m-0" for="o-vendor">Proveedor</label>
-          <p-tag value="Sugerido por IA" severity="info" [rounded]="true" styleClass="text-xs" />
-        </div>
-        <input pInputText id="o-vendor" class="w-full" formControlName="vendor" />
-      </div>
-      <div class="flex flex-col gap-1">
-        <div class="flex items-center gap-2 flex-wrap">
-          <label class="text-xs font-bold text-slate-600 uppercase m-0" for="o-num">Nº factura</label>
-          <p-tag value="Sugerido por IA" severity="info" [rounded]="true" styleClass="text-xs" />
-        </div>
-        <input pInputText id="o-num" class="w-full" formControlName="invoiceNumber" />
-      </div>
-      <div class="flex flex-col gap-1">
-        <div class="flex items-center gap-2 flex-wrap">
-          <label class="text-xs font-bold text-slate-600 uppercase m-0" for="o-start">Periodo inicio</label>
-          <p-tag value="Sugerido por IA" severity="info" [rounded]="true" styleClass="text-xs" />
-        </div>
-        <input pInputText id="o-start" class="w-full" formControlName="billingPeriodStart" />
-      </div>
-      <div class="flex flex-col gap-1">
-        <div class="flex items-center gap-2 flex-wrap">
-          <label class="text-xs font-bold text-slate-600 uppercase m-0" for="o-end">Periodo fin</label>
-          <p-tag value="Sugerido por IA" severity="info" [rounded]="true" styleClass="text-xs" />
-        </div>
-        <input pInputText id="o-end" class="w-full" formControlName="billingPeriodEnd" />
-      </div>
-      <div class="flex flex-col gap-1">
-        <div class="flex items-center gap-2 flex-wrap">
-          <label class="text-xs font-bold text-slate-600 uppercase m-0" for="o-total">Monto total (EUR)</label>
-          <p-tag value="Sugerido por IA" severity="info" [rounded]="true" styleClass="text-xs" />
-        </div>
-        <input pInputText id="o-total" type="number" class="w-full" formControlName="total" />
-      </div>
-      <div class="flex flex-col gap-1">
-        <div class="flex items-center gap-2 flex-wrap">
-          <label class="text-xs font-bold text-slate-600 uppercase m-0" for="o-kwh">Consumo (kWh)</label>
-          <p-tag value="Sugerido por IA" severity="info" [rounded]="true" styleClass="text-xs" />
-        </div>
-        <input pInputText id="o-kwh" type="number" class="w-full" formControlName="consumption" />
-      </div>
-    </div>
-    <div class="flex justify-end gap-2 mt-2">
+      </fieldset>
+    </form>
+
+    <footer class="px-5 md:px-6 py-4 border-t border-slate-100 bg-slate-50/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <p class="text-[11px] text-slate-500 m-0">
+        Los cambios se guardan localmente; recién al confirmar en el último paso se persisten en DynamoDB.
+      </p>
       <p-button
-        type="submit"
-        label="Continuar"
+        type="button"
+        label="Guardar y continuar"
         icon="pi pi-arrow-right"
         iconPos="right"
         styleClass="p-button-emerald rounded-xl text-xs font-bold px-5"
         [disabled]="form.invalid"
+        (onClick)="submit()"
       />
-    </div>
-  </form>
-}
+    </footer>
+  </section>
+</div>

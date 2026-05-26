@@ -9,6 +9,7 @@ export interface InvoiceReviewLine {
 /** UI model for Step 2 (human review before confirm) */
 export interface InvoiceReviewView {
   vendor: string;
+  vendorTaxId?: string;
   invoiceNumber?: string;
   invoiceDate?: string;
   cups?: string;

@@ -97,3 +97,16 @@ variable "invoice_queue_arn" {
   description = "ARN de la cola SQS de facturas"
   type        = string
 }
+
+variable "appsync_url" {
+  description = "URL GraphQL de AppSync (worker notifier → updateInvoiceStatus)"
+  type        = string
+  default     = ""
+}
+
+variable "appsync_api_key" {
+  description = "API Key de AppSync para el worker notifier"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

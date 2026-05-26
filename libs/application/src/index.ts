@@ -1,5 +1,16 @@
 export * from './exceptions/application-validation.error.js';
 export * from './ports/index.js';
+export type {
+  IInvoiceLifecycleRepository,
+  InvoiceLifecycleIdentity,
+  CreateInvoiceLifecycleInput,
+  InvoiceStateTransitionInput,
+  PersistExtractionDraftInput,
+  PersistGoldenRecordInput,
+  CommitInvoiceLifecycleStoreInput,
+  InvoiceLifecycleWriteResult,
+  InvoiceLifecycleSnapshot
+} from './ports/invoice-lifecycle-repository.port.js';
 
 // ============================================================================
 // USE CASES
@@ -15,6 +26,8 @@ export * from './use-cases/record-invoice-ia-extraction/record-invoice-ia-extrac
 export * from './use-cases/invoice/errors/InvoiceAlreadyExistsError.js';
 export * from './use-cases/invoice/errors/InvoiceNotFoundError.js';
 export * from './use-cases/invoice/errors/InvoiceNotProcessableError.js';
+export * from './use-cases/invoice/errors/InvoiceVersionConflictError.js';
+export * from './use-cases/invoice/errors/InvoiceInvalidStateTransitionError.js';
 export * from './use-cases/invoice/types/index.js';
 
 // invoice/<flow>
@@ -24,6 +37,14 @@ export * from './use-cases/invoice/process-invoice-pipeline/process-invoice-pipe
 export * from './use-cases/invoice/process-invoice-queue-batch/process-invoice-queue-batch.use-case.js';
 export * from './use-cases/invoice/create-presigned-upload-url/create-presigned-upload-url.use-case.js';
 export * from './use-cases/invoice/enqueue-invoice-processing/enqueue-invoice-processing.use-case.js';
+
+// invoice/<lifecycle v2 — drafts + golden record + audit append-only>
+export * from './use-cases/invoice/create-invoice-draft/create-invoice-draft.use-case.js';
+export * from './use-cases/invoice/confirm-invoice-extraction/confirm-invoice-extraction.use-case.js';
+export * from './use-cases/invoice/commit-invoice-lifecycle/commit-invoice-lifecycle.use-case.js';
+export * from './use-cases/invoice/reject-invoice/reject-invoice.use-case.js';
+export * from './use-cases/invoice/retry-invoice-processing/retry-invoice-processing.use-case.js';
+export * from './use-cases/invoice/handle-invoice-appsync-request/handle-invoice-appsync-request.use-case.js';
 
 // events
 export * from './use-cases/events/publish-domain-event/publish-domain-event.use-case.js';

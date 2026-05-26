@@ -5,13 +5,10 @@ import { FileUploadModule } from 'primeng/fileupload';
 import { ButtonModule } from 'primeng/button';
 import { ToastModule } from 'primeng/toast';
 
-import { toInvoiceDynamoId } from '../../../../core/models/api/appsync-api.models';
 import { InvoiceStateService } from '../../../../services/state/invoice-state.service';
-import { AppSyncApiService } from '../../../../services/infrastructure/appsync-api.service';
-import { S3StorageService } from '../../../../services/infrastructure/s3-storage.service';
 import { AuthService } from '../../../../services/infrastructure/auth.service';
 import { NotificationService } from '../../../../services/ui/notification.service';
-import { WorkflowStateService } from '../../../../services/state/workflow-state.service';
+import { InvoiceOnboardingUiService } from '../../../../features/invoice-onboarding/services/invoice-onboarding-ui.service';
 
 @Component({
   selector: 'app-invoice-upload',
@@ -29,11 +26,9 @@ import { WorkflowStateService } from '../../../../services/state/workflow-state.
 })
 export class InvoiceUploadComponent implements OnInit {
   private readonly stateService = inject(InvoiceStateService);
-  private readonly appsyncApi = inject(AppSyncApiService);
-  private readonly s3Storage = inject(S3StorageService);
   private readonly auth = inject(AuthService);
   private readonly notifications = inject(NotificationService);
-  private readonly workflow = inject(WorkflowStateService);
+  readonly onboarding = inject(InvoiceOnboardingUiService);
 
   @Output() readonly onComplete = new EventEmitter<void>();
 
@@ -54,7 +49,6 @@ export class InvoiceUploadComponent implements OnInit {
     }
   }
 
-  /** Evita envío HTML nativo (recarga completa) — `ngSubmit` requiere NgForm / FormsModule. */
   onFormSubmit(event: Event): void {
     event.preventDefault();
     void this.processAndContinue();
@@ -66,36 +60,12 @@ export class InvoiceUploadComponent implements OnInit {
     }
 
     this.isLoading = true;
-    this.workflow.resetIdentification();
-    this.workflow.setPhase('uploading');
 
     try {
-      const uuid = crypto.randomUUID();
-      const finalId = toInvoiceDynamoId(uuid);
-
-      const { uploadURL, key, invoiceId } = await this.appsyncApi.getPresignedUrl(
-        this.selectedFile.name,
-        this.selectedFile.type,
-        finalId
-      );
-
-      const uploadResult = await this.s3Storage.putObject(uploadURL, this.selectedFile);
-
-      if (!uploadResult.success) {
-        throw new Error('La subida a S3 falló.');
-      }
-
-      this.stateService.setInvoiceId(invoiceId);
-      this.stateService.setStorageKey(key);
-      this.stateService.setIngestPayload(this.selectedFile);
-
-      this.workflow.setPhase('awaiting_ai');
-
-      this.notifications.success('Subida exitosa', 'Continuando al paso de validación…');
-
+      await this.onboarding.runPostUploadPipeline(this.selectedFile);
+      this.notifications.success('Documento registrado', 'Procesando extracción…');
       this.onComplete.emit();
     } catch (error: unknown) {
-      this.workflow.setPhase('error');
       const message = error instanceof Error ? error.message : 'Error desconocido';
       this.notifications.error('Error de proceso', message);
     } finally {

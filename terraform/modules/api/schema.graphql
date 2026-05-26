@@ -6,7 +6,24 @@ schema {
 
 # --- ENUMS ---
 enum NodeType { ORGANIZATION; REGION; BRANCH; BUILDING; ASSET; METER; COST_CENTER }
-enum InvoiceStatus { UPLOADED; PROCESSING; READY_FOR_REVIEW; FAILED; CONFIRMED; POSTED }
+
+enum InvoiceStatus {
+  UPLOADED
+  PROCESSING
+  READY_FOR_REVIEW
+  AI_VALIDATION_REQUIRED
+  FAILED
+  CONFIRMED
+  POSTED
+  PERSISTED
+}
+
+enum EnergyServiceType {
+  ELECTRICITY
+  GAS
+  WATER
+  STEAM
+}
 
 # --- TIPOS DE RESPUESTA (Autorización Unificada) ---
 type MutationResponse @aws_api_key @aws_cognito_user_pools {
@@ -17,6 +34,22 @@ type MutationResponse @aws_api_key @aws_cognito_user_pools {
   nodeId: ID
   path: String
   entity: AWSJSON
+}
+
+type InvoiceLifecycleMutationResult @aws_api_key @aws_cognito_user_pools {
+  success: Boolean!
+  message: String
+  invoiceId: ID
+  version: Int
+  status: String
+  updatedAt: String
+  correlationId: String
+}
+
+type PresignedUploadUrl @aws_api_key @aws_cognito_user_pools {
+  uploadURL: String!
+  key: String!
+  invoiceId: ID!
 }
 
 type Node @aws_api_key @aws_cognito_user_pools {
@@ -30,15 +63,14 @@ type Node @aws_api_key @aws_cognito_user_pools {
 
 type Invoice @aws_api_key @aws_cognito_user_pools {
   id: ID!
-  status: InvoiceStatus
+  status: String
   vendor: String
   totalAmount: Float
+  extractedData: AWSJSON
+  message: String
 }
 
 # --- INPUTS (sin tenantId: el aislamiento multi-tenant viene de Cognito) ---
-# tenantId sólo desde custom:tenant_id.
-# ORGANIZATION raíz: opcional id / nodeId (UUID/nombre de id); si ausente la Lambda genera uno. No usar tenant como nodeId.
-# orgId en el resto de nodos: partición ORG# bajo la que cuelga el nodo.
 input SaveNodeInput {
   id: ID
   nodeId: ID
@@ -54,11 +86,57 @@ input UpdateNodeInput {
   metadata: AWSJSON
 }
 
+input CreateInvoiceDraftInput {
+  fileName: String!
+  fileSize: Int!
+  mimeType: String!
+  branchId: ID
+  buildingId: ID
+  documentHashSha256: String
+}
+
+input InvoiceFieldCorrectionInput {
+  field: String!
+  oldValue: String
+  newValue: String
+  reason: String
+  originalConfidence: Float
+}
+
+input CommitInvoiceLifecycleInput {
+  invoiceId: ID!
+  expectedVersion: Int
+  extractionDraftVersion: Int
+  vendor: String!
+  vendorTaxId: String!
+  invoiceNumber: String!
+  invoiceDate: String!
+  dueDate: String
+  billingPeriodStart: String!
+  billingPeriodEnd: String!
+  currency: String!
+  totalAmount: Float!
+  taxAmount: Float
+  subtotalAmount: Float
+  consumptionValue: Float!
+  consumptionUnit: String!
+  meterId: ID
+  energyType: EnergyServiceType!
+  branchId: ID!
+  buildingId: ID!
+  costCenterId: ID
+  assetId: ID
+  corrections: [InvoiceFieldCorrectionInput!]
+  notes: String
+  wipSnapshotHash: String
+}
+
 # --- CONSULTAS ---
 type Query {
   getTree(rootNodeId: ID, orgId: ID): [Node] @aws_cognito_user_pools
   getNode(id: ID!, orgId: ID): Node @aws_cognito_user_pools
   getInvoice(id: ID!): Invoice @aws_cognito_user_pools
+  getInvoiceLifecycle(invoiceId: ID!): AWSJSON @aws_cognito_user_pools
 }
 
 # --- ACCIONES ---
@@ -66,17 +144,30 @@ type Mutation {
   saveNode(input: SaveNodeInput!): MutationResponse @aws_cognito_user_pools
   updateNode(id: ID!, orgId: ID, input: UpdateNodeInput!): MutationResponse @aws_cognito_user_pools
   deleteNode(id: ID!, orgId: ID): MutationResponse @aws_cognito_user_pools
-  
-  updateInvoiceStatus(id: ID!, status: InvoiceStatus!): Invoice 
-    @aws_api_key @aws_cognito_user_pools
+
+  getPresignedUrl(fileName: String!, fileType: String!, invoiceId: ID!): PresignedUploadUrl
+    @aws_cognito_user_pools
+
+  createInvoiceDraft(input: CreateInvoiceDraftInput!): InvoiceLifecycleMutationResult
+    @aws_cognito_user_pools
+
+  commitInvoiceLifecycle(input: CommitInvoiceLifecycleInput!): InvoiceLifecycleMutationResult
+    @aws_cognito_user_pools
+
+  updateInvoiceStatus(
+    id: ID!
+    status: String!
+    extractedData: AWSJSON
+    message: String
+  ): Invoice @aws_api_key @aws_cognito_user_pools
 }
 
-# --- SUSCRIPCIONES (Sin argumentos para evitar errores de validación) ---
+# --- SUSCRIPCIONES ---
 type Subscription {
   onInvoiceUpdated: Invoice
     @aws_subscribe(mutations: ["updateInvoiceStatus"])
     @aws_api_key @aws_cognito_user_pools
-    
+
   onNodeChanged: MutationResponse
     @aws_subscribe(mutations: ["saveNode", "updateNode", "deleteNode"])
     @aws_api_key @aws_cognito_user_pools

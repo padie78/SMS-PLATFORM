@@ -8,6 +8,7 @@ import { InvoiceUploadComponent } from './steps/upload.component';
 import { InvoiceStateService } from '../../../services/state/invoice-state.service';
 import { WorkflowStateService } from '../../../services/state/workflow-state.service';
 import { InvoiceOnboardingUiService } from '../../../features/invoice-onboarding/services/invoice-onboarding-ui.service';
+import { NotificationService } from '../../../services/ui/notification.service';
 import { InvoiceOnboardingGateComponent } from '../../../ui/organisms/invoice-onboarding-gate/invoice-onboarding-gate.component';
 import { InvoiceOnboardingStepFormComponent } from '../../../ui/organisms/invoice-onboarding-step-form/invoice-onboarding-step-form.component';
 import { InvoiceOnboardingMeterAllocationComponent } from '../../../ui/organisms/invoice-onboarding-meter-allocation/invoice-onboarding-meter-allocation.component';
@@ -35,6 +36,7 @@ export class InvoiceCreateComponent implements OnInit {
   private readonly stateService = inject(InvoiceStateService);
   private readonly workflow = inject(WorkflowStateService);
   private readonly cdr = inject(ChangeDetectorRef);
+  private readonly notifications = inject(NotificationService);
   readonly onboarding = inject(InvoiceOnboardingUiService);
 
   /** 0 Documento, 1 Datos, 2 Medidores, 3 Guardrail */
@@ -45,16 +47,20 @@ export class InvoiceCreateComponent implements OnInit {
    * anterior y no se mostraría OCR vs manual.
    */
   ngOnInit(): void {
-    this.stateService.clear();
-    this.workflow.reset();
-    this.onboarding.resetFlow();
-    this.activeStepIndex = 0;
+    const restored = this.onboarding.tryRestoreWipSession();
+    if (!restored) {
+      this.stateService.clear();
+      this.workflow.reset();
+      this.onboarding.resetFlow();
+      this.activeStepIndex = 0;
+    } else {
+      this.activeStepIndex = this.onboarding.workflowPhase() === 'ready_for_review' ? 1 : 0;
+    }
   }
 
   private readonly maxStepIndex = 3;
 
-  async onUploadDone(nextCallback: unknown): Promise<void> {
-    await this.onboarding.runPostUploadPipeline();
+  onUploadDone(nextCallback: unknown): void {
     this.advance(nextCallback);
   }
 
@@ -66,9 +72,15 @@ export class InvoiceCreateComponent implements OnInit {
     this.advance(nextCallback);
   }
 
-  onGuardrailSubmit(): void {
-    this.onboarding.finalizeSuccessView();
-    this.cdr.markForCheck();
+  async onGuardrailSubmit(): Promise<void> {
+    try {
+      await this.onboarding.finalizeAndCommit();
+      this.cdr.markForCheck();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'No se pudo guardar la factura';
+      this.notifications.error('Error al confirmar', message);
+      this.cdr.markForCheck();
+    }
   }
 
   prevStep(prevCallback?: unknown): void {

@@ -1,18 +1,25 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
+import type { EnergyServiceType } from '@sms/common';
 import type { InvoiceReviewView } from '../../../core/models/invoice-review.model';
 import type { MeterAllocationRow } from '../../../core/models/invoice-onboarding.model';
 import { InvoiceStateService } from '../../../services/state/invoice-state.service';
+import { WorkflowStateService } from '../../../services/state/workflow-state.service';
 import {
-  MOCK_HISTORICAL_AVG_KWH,
-  MOCK_METER_ALLOCATION_TEMPLATE,
-  MOCK_OCR_INVOICE_REVIEW
-} from '../data/invoice-onboarding.mock';
+  INVOICE_HIERARCHY_BRANCHES,
+  INVOICE_HIERARCHY_BUILDINGS
+} from '../../../services/business/invoice-hierarchy-catalog';
+import { MOCK_HISTORICAL_AVG_KWH, MOCK_METER_ALLOCATION_TEMPLATE } from '../data/invoice-onboarding.mock';
+import { InvoiceOnboardingPipelineService } from './invoice-onboarding-pipeline.service';
+import { InvoiceWipStoreService } from './invoice-wip-store.service';
 
 const CO2E_FACTOR_KG_PER_KWH = 0.00028;
 
 @Injectable({ providedIn: 'root' })
 export class InvoiceOnboardingUiService {
-  constructor(private readonly invoiceState: InvoiceStateService) {}
+  private readonly invoiceState = inject(InvoiceStateService);
+  private readonly workflow = inject(WorkflowStateService);
+  private readonly pipeline = inject(InvoiceOnboardingPipelineService);
+  private readonly wipStore = inject(InvoiceWipStoreService);
 
   readonly gatePassed = signal(false);
   readonly isOCR = signal(true);
@@ -20,9 +27,14 @@ export class InvoiceOnboardingUiService {
   readonly ocrProgress = signal(0);
   readonly showSuccess = signal(false);
   readonly successCo2eKg = signal(0);
-  /** Declaración jurada — obligatoria solo si hay advertencia de desviación. */
+  readonly isCommitting = signal(false);
   readonly deviationAcknowledged = signal(false);
   readonly meterRows = signal<MeterAllocationRow[]>([]);
+
+  readonly branchOptions = INVOICE_HIERARCHY_BRANCHES.map((b) => ({
+    label: b.label,
+    value: b.value
+  }));
 
   readonly historicalAvgKwh = (): number => MOCK_HISTORICAL_AVG_KWH;
 
@@ -38,6 +50,8 @@ export class InvoiceOnboardingUiService {
     () => this.consumptionDeviationPct() > 20
   );
 
+  readonly workflowPhase = computed(() => this.workflow.currentPhase());
+
   selectOcrPath(): void {
     this.isOCR.set(true);
   }
@@ -51,42 +65,60 @@ export class InvoiceOnboardingUiService {
   }
 
   resetFlow(): void {
+    this.pipeline.tearDown();
+    this.wipStore.clear();
     this.gatePassed.set(false);
     this.isOCR.set(true);
     this.ocrSimulating.set(false);
     this.ocrProgress.set(0);
     this.showSuccess.set(false);
     this.successCo2eKg.set(0);
+    this.isCommitting.set(false);
     this.deviationAcknowledged.set(false);
     this.meterRows.set([]);
   }
 
-  /** Tras subida: simula OCR o avanza rápido en modo manual; rellena `extractedData` solo en OCR. */
-  async runPostUploadPipeline(): Promise<void> {
-    if (this.isOCR()) {
-      this.ocrSimulating.set(true);
-      this.ocrProgress.set(0);
-      for (let p = 0; p <= 100; p += 5) {
-        this.ocrProgress.set(p);
-        await new Promise<void>((r) => setTimeout(r, 45));
-      }
+  buildingOptionsForBranch(branchId: string) {
+    return INVOICE_HIERARCHY_BUILDINGS.filter((b) => b.branchId === branchId).map((b) => ({
+      label: b.label,
+      value: b.value
+    }));
+  }
+
+  patchHierarchyFromForm(branchId: string, buildingId: string): void {
+    this.invoiceState.patchHierarchy({ branchId, buildingId });
+    this.wipStore.patchHierarchy({ branchId, buildingId });
+  }
+
+  setEnergyType(energyType: EnergyServiceType): void {
+    this.wipStore.setEnergyType(energyType);
+  }
+
+  setVendorTaxId(vendorTaxId: string): void {
+    this.wipStore.setVendorTaxId(vendorTaxId);
+  }
+
+  /** Tras subida: draft DDB + S3 + suscripción IA (sin mocks). */
+  async runPostUploadPipeline(file: File): Promise<void> {
+    this.ocrSimulating.set(this.isOCR());
+    this.ocrProgress.set(8);
+
+    const progressTimer = this.isOCR()
+      ? window.setInterval(() => {
+          const p = this.ocrProgress();
+          if (p < 92) this.ocrProgress.set(Math.min(92, p + 4));
+        }, 800)
+      : null;
+
+    try {
+      await this.pipeline.uploadAndStartPipeline(file, this.isOCR());
       this.ocrProgress.set(100);
-      this.invoiceState.patchExtractedOptimistic({ ...MOCK_OCR_INVOICE_REVIEW });
+    } finally {
+      if (progressTimer != null) {
+        clearInterval(progressTimer);
+      }
       this.ocrSimulating.set(false);
-      return;
     }
-    const emptyDraft: InvoiceReviewView = {
-      vendor: '',
-      invoiceNumber: '',
-      invoiceDate: '',
-      total: 0,
-      currency: 'EUR',
-      date: '',
-      consumption: 0,
-      lines: [],
-      confidence: 0
-    };
-    this.invoiceState.patchExtractedOptimistic(emptyDraft);
   }
 
   initMeterRowsFromConsumption(): void {
@@ -100,12 +132,17 @@ export class InvoiceOnboardingUiService {
       allocatedKwh: base + (i === 0 ? remainder : 0)
     }));
     this.meterRows.set(rows);
+    this.wipStore.setMeterRows(rows);
   }
 
   patchMeterRow(id: string, kwh: number): void {
-    this.meterRows.update((rows) =>
-      rows.map((r) => (r.id === id ? { ...r, allocatedKwh: Math.max(0, kwh) } : r))
-    );
+    this.meterRows.update((rows) => {
+      const next = rows.map((r) =>
+        r.id === id ? { ...r, allocatedKwh: Math.max(0, kwh) } : r
+      );
+      this.wipStore.setMeterRows(next);
+      return next;
+    });
   }
 
   readonly allocatedTotalKwh = computed(() =>
@@ -124,9 +161,16 @@ export class InvoiceOnboardingUiService {
     this.successCo2eKg.set(Math.round(kwh * CO2E_FACTOR_KG_PER_KWH * 1000) / 1000);
   }
 
-  finalizeSuccessView(): void {
-    this.computeSuccessCo2FromInvoice();
-    this.showSuccess.set(true);
+  async finalizeAndCommit(): Promise<void> {
+    if (this.isCommitting()) return;
+    this.isCommitting.set(true);
+    try {
+      await this.pipeline.commitToBackend();
+      this.computeSuccessCo2FromInvoice();
+      this.showSuccess.set(true);
+    } finally {
+      this.isCommitting.set(false);
+    }
   }
 
   setDeviationAck(v: boolean): void {
@@ -134,9 +178,37 @@ export class InvoiceOnboardingUiService {
   }
 
   canSubmitGuardrail(): boolean {
+    if (!this.allocationMatchesInvoice()) return false;
+    const h = this.invoiceState.getSnapshot().hierarchy;
+    if (!h.branchId?.trim() || !h.buildingId?.trim()) return false;
     if (!this.hasConsumptionDeviationWarning()) {
       return true;
     }
     return this.deviationAcknowledged();
+  }
+
+  /** Restaura WIP si el usuario recargó la página a mitad del wizard. */
+  tryRestoreWipSession(): boolean {
+    const wip = this.wipStore.loadFromSession();
+    if (!wip) return false;
+    this.gatePassed.set(true);
+    this.isOCR.set(wip.isOcr);
+    if (wip.extractedData) {
+      this.invoiceState.patchExtractedOptimistic(wip.extractedData);
+    }
+    if (wip.storageKey) {
+      this.invoiceState.setStorageKey(wip.storageKey);
+    }
+    if (wip.invoiceId) {
+      this.invoiceState.setInvoiceId(wip.invoiceId);
+    }
+    this.invoiceState.patchHierarchy(wip.hierarchy);
+    if (wip.meterRows.length) {
+      this.meterRows.set(wip.meterRows);
+    }
+    if (wip.isOcr && wip.extractedData) {
+      this.workflow.setPhase('ready_for_review');
+    }
+    return true;
   }
 }

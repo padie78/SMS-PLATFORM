@@ -44,3 +44,11 @@ export {
   type AppSyncNodeConfigHandler,
   type CreateHandleAppSyncRequestUseCaseParams
 } from './appsync-node-config.factory.js';
+
+export {
+  createInvoiceLifecycleRepository,
+  createHandleInvoiceAppSyncRequestUseCase,
+  createAppSyncApiCombinedHandler,
+  type AppSyncApiCombinedHandler,
+  type CreateInvoiceLifecycleStackParams
+} from './invoice-lifecycle.factory.js';

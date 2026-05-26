@@ -23,6 +23,7 @@ import type { TreeNode } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { LocationTreeNodeTemplateComponent } from '../../molecules/location-tree-node-template/location-tree-node-template.component';
+import { LocationTreeSkeletonComponent } from '../../molecules/location-tree-skeleton/location-tree-skeleton.component';
 import type { SmsLocationNode, SmsLocationNodeType } from '../../../core/models/sms-location-node.model';
 import { buildLocationNodeTooltipText } from '../../../features/location/utils/location-node-tooltip.util';
 import { isSmsTreeDraftNode } from '../../../features/location/lib/location-tree-helpers';
@@ -176,7 +177,8 @@ function decorateTreeNodeBadgeData(nodes: SmsLocationNode[]): SmsLocationNode[] 
     ButtonModule,
     ConfirmDialogModule,
     TooltipModule,
-    LocationTreeNodeTemplateComponent
+    LocationTreeNodeTemplateComponent,
+    LocationTreeSkeletonComponent
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [ConfirmationService, TreeDragDropService],
@@ -346,7 +348,24 @@ function decorateTreeNodeBadgeData(nodes: SmsLocationNode[]): SmsLocationNode[] 
       <p-contextMenu #cm [model]="contextMenuItems()" />
       <p-confirmDialog />
 
-      <div class="flex-1 min-h-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm">
+      <div class="relative flex-1 min-h-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm">
+        <!-- Overlay sutil de "Actualizando…" cuando hay árbol pintado y se está
+             recargando (soft reload). NO bloquea interacción: el usuario puede
+             seguir leyendo y, si demora más de ~300ms, percibe el feedback. -->
+        <div
+          *ngIf="loading && treeNodes.length > 0"
+          class="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-center px-3 py-2"
+          role="status"
+          aria-live="polite"
+        >
+          <div
+            class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/95 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-emerald-800 shadow-sm backdrop-blur"
+          >
+            <i class="pi pi-spin pi-spinner text-[10px]" aria-hidden="true"></i>
+            Actualizando jerarquía…
+          </div>
+        </div>
+
         <ng-template #emptyState>
           <div class="h-full flex flex-column align-items-center justify-content-center gap-3 p-6 text-center">
             <div class="inline-flex align-items-center justify-content-center w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-200">
@@ -450,17 +469,15 @@ function decorateTreeNodeBadgeData(nodes: SmsLocationNode[]): SmsLocationNode[] 
         </div>
 
         <ng-template #noTreeOrLoading>
+          <!-- Carga inicial: en vez de un spinner aislado mostramos un skeleton
+               con la geometría real del árbol. Es el patrón "premium" usado
+               por Vercel/Linear/Notion: el usuario percibe progreso continuo
+               y la transición a contenido real no produce layout shift. -->
           <div
             *ngIf="loading && treeNodes.length === 0"
-            class="h-full flex flex-column align-items-center justify-content-center gap-3 p-8 text-center min-h-[280px]"
-            role="status"
-            aria-live="polite"
+            class="h-full flex flex-column min-h-[280px]"
           >
-            <i class="pi pi-spin pi-spinner text-3xl text-emerald-600" aria-hidden="true"></i>
-            <div class="text-sm font-semibold text-slate-800">Cargando jerarquía…</div>
-            <div class="text-[12px] text-slate-500 max-w-xs leading-relaxed">
-              Sincronizando con el árbol de ubicaciones.
-            </div>
+            <sms-location-tree-skeleton />
           </div>
           <ng-container *ngIf="!loading && treeNodes.length === 0">
             <ng-container *ngTemplateOutlet="emptyState"></ng-container>

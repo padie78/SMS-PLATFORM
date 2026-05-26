@@ -24,7 +24,7 @@ import { InvoiceStateService } from '../../../services/state/invoice-state.servi
       <div>
         <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 m-0 mb-4">Guardrail — revisión final</h3>
         <p class="text-sm text-slate-500 m-0 leading-relaxed">
-          Confirma consistencia de consumo vs histórico operativo (mock) antes de cerrar el alta.
+          Última validación antes de impactar el golden record en DynamoDB. Verifica consumo, ubicación y reparto por medidor.
         </p>
       </div>
 
@@ -63,12 +63,16 @@ import { InvoiceStateService } from '../../../services/state/invoice-state.servi
         </div>
       }
 
-      <div class="flex justify-end gap-2 pt-4 mt-2 border-t border-slate-200">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 mt-2 border-t border-slate-200">
+        <p class="text-xs text-slate-500 m-0">
+          Al confirmar, los datos temporales se consolidan en la base de datos (registro definitivo).
+        </p>
         <p-button
-          label="Confirmar y procesar"
-          icon="pi pi-check"
+          label="Confirmar y persistir"
+          icon="pi pi-database"
           styleClass="p-button-emerald rounded-xl text-xs font-bold px-6"
-          [disabled]="!canSubmit()"
+          [disabled]="!canSubmit() || onboarding.isCommitting()"
+          [loading]="onboarding.isCommitting()"
           (onClick)="emitSubmit()"
         />
       </div>
@@ -77,7 +81,7 @@ import { InvoiceStateService } from '../../../services/state/invoice-state.servi
 })
 export class InvoiceOnboardingGuardrailReviewComponent implements OnInit {
   private readonly invoiceState = inject(InvoiceStateService);
-  private readonly onboarding = inject(InvoiceOnboardingUiService);
+  readonly onboarding = inject(InvoiceOnboardingUiService);
 
   @Output() readonly submitReview = new EventEmitter<void>();
 

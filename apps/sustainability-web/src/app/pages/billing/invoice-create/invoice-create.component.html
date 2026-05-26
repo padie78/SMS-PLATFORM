@@ -1,55 +1,90 @@
 <div class="gdesg-root invoice-create-flow w-full max-w-[1600px] mx-auto space-y-6 pb-12 min-w-0">
-  <header class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+  <header class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
     <div class="min-w-0 pr-2">
-      <p class="text-xs font-bold text-emerald-700 m-0">SMS · Billing &amp; Compliance</p>
-      <h1 class="text-3xl font-black text-slate-900 tracking-tight mt-1 m-0">Nueva factura</h1>
-      <p class="text-slate-500 text-sm max-w-3xl leading-relaxed mt-2 m-0">
-        Flujo guiado en cuatro pasos: documento, datos, reparto por medidor y guardrail. Misma línea visual que el
-        dashboard ejecutivo (superficies claras y bordes suaves).
+      <p class="text-xs font-bold text-emerald-700 m-0 tracking-wide">SMS · Compliance</p>
+      <h1 class="text-3xl font-black text-slate-900 tracking-tight mt-1 m-0">Alta de factura</h1>
+      <p class="text-slate-500 text-sm max-w-2xl leading-relaxed mt-2 m-0">
+        Cuatro pasos guiados. Los datos se guardan en tu sesión mientras avanzas; la persistencia definitiva ocurre al confirmar.
       </p>
     </div>
+    @if (onboarding.gatePassed() && !onboarding.showSuccess()) {
+      <div
+        class="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm shrink-0"
+        aria-live="polite"
+      >
+        <span class="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Estado</span>
+        <span
+          class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold"
+          [class.bg-amber-50]="onboarding.workflowPhase() === 'awaiting_ai'"
+          [class.text-amber-800]="onboarding.workflowPhase() === 'awaiting_ai'"
+          [class.bg-emerald-50]="onboarding.workflowPhase() === 'ready_for_review'"
+          [class.text-emerald-800]="onboarding.workflowPhase() === 'ready_for_review'"
+          [class.bg-slate-100]="onboarding.workflowPhase() === 'idle' || onboarding.workflowPhase() === 'uploading'"
+          [class.text-slate-700]="onboarding.workflowPhase() === 'idle' || onboarding.workflowPhase() === 'uploading'"
+        >
+          @if (onboarding.ocrSimulating() || onboarding.workflowPhase() === 'awaiting_ai') {
+            <i class="pi pi-spin pi-spinner text-[10px]" aria-hidden="true"></i>
+            Procesando IA…
+          } @else if (onboarding.workflowPhase() === 'ready_for_review') {
+            <i class="pi pi-check-circle text-[10px]" aria-hidden="true"></i>
+            Listo para revisar
+          } @else {
+            {{ onboarding.workflowPhase() }}
+          }
+        </span>
+        <span class="text-[10px] text-slate-400 font-medium hidden sm:inline">
+          {{ onboarding.isOCR() ? 'OCR' : 'Manual' }}
+        </span>
+      </div>
+    }
   </header>
 
   @if (!onboarding.gatePassed()) {
     <section
-      class="rounded-2xl border border-slate-200 bg-white shadow-sm min-w-0 max-w-full overflow-hidden"
+      class="rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] min-w-0 overflow-hidden"
       aria-label="Elegir método de ingesta"
     >
-      <div class="min-w-0 max-w-full p-4 sm:p-5 md:p-6">
+      <div class="h-1 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600"></div>
+      <div class="min-w-0 max-w-full p-5 md:p-8">
         <app-invoice-onboarding-gate />
       </div>
     </section>
   } @else if (onboarding.showSuccess()) {
     <section
-      class="rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm min-w-0 overflow-hidden"
+      class="rounded-2xl border border-emerald-200/80 bg-gradient-to-b from-emerald-50/50 to-white shadow-sm min-w-0 overflow-hidden"
       aria-label="Factura procesada"
     >
-      <div class="flex justify-center p-5 md:p-6">
+      <div class="flex justify-center p-6 md:p-10">
         <app-invoice-onboarding-success-panel />
       </div>
     </section>
   } @else {
     <section
-      class="rounded-2xl border border-slate-200 bg-white shadow-sm min-w-0 overflow-hidden"
+      class="rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] min-w-0 overflow-hidden"
       aria-label="Asistente de alta de factura"
     >
       @if (onboarding.ocrSimulating()) {
-        <div class="px-5 py-4 md:px-6 border-b border-slate-200 bg-slate-50">
-          <p class="text-xs font-bold uppercase tracking-wider text-slate-600 m-0 mb-3">Analizando documento</p>
-          <p-progressBar [value]="onboarding.ocrProgress()" [showValue]="true" styleClass="rounded-xl h-2rem" />
+        <div class="px-5 py-4 md:px-6 border-b border-slate-100 bg-slate-50/90">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <p class="text-xs font-bold uppercase tracking-wider text-slate-600 m-0">Pipeline IA en curso</p>
+            <span class="text-xs text-slate-500 tabular-nums">{{ onboarding.ocrProgress() }}%</span>
+          </div>
+          <p-progressBar [value]="onboarding.ocrProgress()" [showValue]="false" styleClass="rounded-full h-2" />
         </div>
       }
-      <div class="p-5 md:p-6">
-        <p-stepper [(activeStep)]="activeStepIndex">
+      <div class="p-4 md:p-6">
+        <p-stepper [(activeStep)]="activeStepIndex" styleClass="invoice-stepper-modern">
           <p-stepperPanel header="Documento">
             <ng-template pTemplate="content" let-nextCallback="nextCallback">
-              <div class="rounded-xl border border-slate-200 bg-slate-50/80 min-w-0 overflow-hidden">
+              <div class="rounded-2xl border border-slate-100 bg-slate-50/60 min-w-0 overflow-hidden">
                 <div class="p-5 md:p-6 min-w-0 w-full max-w-5xl mx-auto">
                   @if (!onboarding.ocrSimulating()) {
                     <app-invoice-upload (onComplete)="onUploadDone(nextCallback)" />
                   } @else {
-                    <div class="rounded-xl border border-slate-200 bg-white/80 px-4 py-10 md:px-6 text-center min-w-0">
-                      <p class="text-sm text-slate-500 m-0">Preparando siguiente paso…</p>
+                    <div class="rounded-xl border border-slate-200 bg-white px-4 py-12 text-center">
+                      <i class="pi pi-spin pi-spinner text-2xl text-emerald-600 mb-3" aria-hidden="true"></i>
+                      <p class="text-sm text-slate-600 m-0 font-medium">Extrayendo datos del PDF…</p>
+                      <p class="text-xs text-slate-400 m-0 mt-2">Puedes continuar al siguiente paso cuando termine.</p>
                     </div>
                   }
                 </div>
@@ -59,13 +94,11 @@
 
           <p-stepperPanel header="Datos">
             <ng-template pTemplate="content" let-prevCallback="prevCallback" let-nextCallback="nextCallback">
-              <div class="rounded-xl border border-slate-200 bg-slate-50/80 min-w-0 overflow-hidden">
-                <div class="p-5 md:p-6 min-w-0">
+              <div class="rounded-2xl border border-slate-100 bg-slate-50/60 min-w-0 overflow-hidden">
+                <div class="p-4 md:p-5 min-w-0">
                   <app-invoice-onboarding-step-form (continue)="onFormDone(nextCallback)" />
                 </div>
-                <div
-                  class="px-5 py-4 md:px-6 border-t border-slate-200 bg-white/80 flex items-center justify-start"
-                >
+                <div class="px-5 py-3 md:px-6 border-t border-slate-100 bg-white/90">
                   <p-button
                     label="Atrás"
                     icon="pi pi-arrow-left"
@@ -79,13 +112,11 @@
 
           <p-stepperPanel header="Medidores">
             <ng-template pTemplate="content" let-prevCallback="prevCallback" let-nextCallback="nextCallback">
-              <div class="rounded-xl border border-slate-200 bg-slate-50/80 min-w-0 overflow-hidden">
+              <div class="rounded-2xl border border-slate-100 bg-slate-50/60 min-w-0 overflow-hidden">
                 <div class="p-5 md:p-6 min-w-0">
                   <app-invoice-onboarding-meter-allocation (continue)="onMetersDone(nextCallback)" />
                 </div>
-                <div
-                  class="px-5 py-4 md:px-6 border-t border-slate-200 bg-white/80 flex items-center justify-start"
-                >
+                <div class="px-5 py-3 md:px-6 border-t border-slate-100 bg-white/90">
                   <p-button
                     label="Atrás"
                     icon="pi pi-arrow-left"
@@ -97,15 +128,13 @@
             </ng-template>
           </p-stepperPanel>
 
-          <p-stepperPanel header="Guardrail">
+          <p-stepperPanel header="Confirmar">
             <ng-template pTemplate="content" let-prevCallback="prevCallback">
-              <div class="rounded-xl border border-slate-200 bg-slate-50/80 min-w-0 overflow-hidden">
+              <div class="rounded-2xl border border-slate-100 bg-slate-50/60 min-w-0 overflow-hidden">
                 <div class="p-5 md:p-6 min-w-0">
                   <app-invoice-onboarding-guardrail-review (submitReview)="onGuardrailSubmit()" />
                 </div>
-                <div
-                  class="px-5 py-4 md:px-6 border-t border-slate-200 bg-white/80 flex items-center justify-start"
-                >
+                <div class="px-5 py-3 md:px-6 border-t border-slate-100 bg-white/90">
                   <p-button
                     label="Atrás"
                     icon="pi pi-arrow-left"

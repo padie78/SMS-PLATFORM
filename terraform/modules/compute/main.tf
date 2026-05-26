@@ -27,20 +27,34 @@ locals {
   ]
 }
 
-# Lambda que recibe el evento de S3 y envía a SQS
-data "archive_file" "dispatcher_zip" {
-  type        = "zip"
-  source_dir  = "${path.root}/../lambda_code/dispatcher_lambda"
-  output_path = "${path.module}/zips/dispatcher.zip"
-  excludes    = local.lambda_zip_excludes
+data "external" "build_dispatcher_lambda" {
+  program = [
+    "bash",
+    "${path.root}/scripts/build-lambda.sh",
+    "dispatcher-lambda",
+    abspath("${path.root}/../dist/lambda_code/dispatcher_lambda")
+  ]
 }
 
-# Lambda que procesa los mensajes de SQS (OCR, IA, DynamoDB)
+data "external" "build_worker_lambda" {
+  program = [
+    "bash",
+    "${path.root}/scripts/build-lambda.sh",
+    "worker-lambda",
+    abspath("${path.root}/../dist/lambda_code/worker_lambda")
+  ]
+}
+
+data "archive_file" "dispatcher_zip" {
+  type        = "zip"
+  source_dir  = data.external.build_dispatcher_lambda.result.bundle_dir
+  output_path = "${path.module}/zips/dispatcher.zip"
+}
+
 data "archive_file" "worker_zip" {
   type        = "zip"
-  source_dir  = "${path.root}/../lambda_code/worker_lambda"
+  source_dir  = data.external.build_worker_lambda.result.bundle_dir
   output_path = "${path.module}/zips/worker.zip"
-  excludes    = local.lambda_zip_excludes
 }
 
 data "archive_file" "signer_zip" {
@@ -100,7 +114,7 @@ data "archive_file" "kpi_zip" {
 resource "aws_lambda_function" "dispatcher_lambda" {
   function_name = "${var.project_name}-dispatcher-${var.environment}"
   filename      = data.archive_file.dispatcher_zip.output_path
-  handler       = "index.handler"
+  handler       = "main.handler"
   runtime       = "nodejs20.x"
   role          = var.dispatcher_role_arn
   timeout       = 10
@@ -121,7 +135,7 @@ resource "aws_lambda_function" "dispatcher_lambda" {
 resource "aws_lambda_function" "worker_lambda" {
   function_name = "${var.project_name}-worker-${var.environment}"
   filename      = data.archive_file.worker_zip.output_path
-  handler       = "src/index.handler"
+  handler       = "main.handler"
   runtime       = "nodejs20.x"
   role          = var.worker_role_arn
   timeout       = 300 # 5 minutos para Textract + Bedrock
@@ -134,6 +148,8 @@ resource "aws_lambda_function" "worker_lambda" {
       BEDROCK_MODEL_ID  = var.bedrock_model_id
       EMISSIONS_API_URL = var.emissions_api_url
       EMISSIONS_API_KEY = var.emissions_api_key
+      APPSYNC_URL       = var.appsync_url
+      APPSYNC_API_KEY   = var.appsync_api_key
       ENVIRONMENT       = var.environment
     }
   }
@@ -159,7 +175,10 @@ resource "aws_lambda_function" "signer" {
 
 locals {
   api_lambda_env = merge(
-    { DYNAMO_TABLE = var.dynamo_table_name },
+    {
+      DYNAMO_TABLE  = var.dynamo_table_name
+      SQS_QUEUE_URL = var.sqs_queue_url
+    },
     var.allow_tenant_fallback_from_sub ? { ALLOW_TENANT_FALLBACK_FROM_SUB = "true" } : {},
     trimspace(var.default_organization_scope_id) != "" ? { DEFAULT_ORGAN_SCOPE_ID = trimspace(var.default_organization_scope_id) } : {}
   )

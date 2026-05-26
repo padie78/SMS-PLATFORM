@@ -66,6 +66,15 @@ resource "aws_dynamodb_table" "emissions_table" {
     enabled = true
   }
 
+  # TTL para limpiar items WIP del wizard (ver `computeWipTtl` en
+  # libs/common). DynamoDB elimina automáticamente cualquier item cuyo
+  # atributo `ttl` (epoch seconds) ya pasó. Si el usuario abandona el
+  # wizard a mitad de carga, sus items quedan limpios en ~48h sin código.
+  ttl {
+    enabled        = var.enable_ttl
+    attribute_name = var.ttl_attribute_name
+  }
+
   tags = merge(
     {
       Project     = var.project_name

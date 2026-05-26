@@ -11,7 +11,17 @@ import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { map, startWith } from 'rxjs/operators';
 import { ButtonModule } from 'primeng/button';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import type { CostCenterDTO } from '@sms/common';
+import type {
+  CostAllocationMethod,
+  CostCenterDTO,
+  CostCenterForecastModel,
+  LifecycleStatus
+} from '@sms/common';
+import {
+  CostAllocationMethodSchema,
+  CostCenterForecastModelSchema,
+  LifecycleStatusSchema
+} from '@sms/common';
 import { CostCenterEntity } from '@sms/domain';
 
 import {
@@ -233,7 +243,50 @@ export class OrganizationCostCenterFormDialogComponent implements OnInit {
     this.isEdit.set(Boolean(data.costCenter?.id));
     this.form.controls.organizationId.disable({ emitEvent: false });
     this.form.controls.id.disable({ emitEvent: false });
+
+    // CRÍTICO: `buildLocationFormGroup` aplica una regla de producto que arranca
+    // TODOS los `select` no-readonly con `null` (para forzar al usuario a elegir
+    // explícitamente desde el placeholder). En el form completo de cost center
+    // hay 4 selects required: `type`, `forecastModel`, `status`, `allocationMethod`.
+    //
+    // El modal SOLO expone `type` (tab "General"), pero los otros 3 forman parte
+    // del FormGroup completo y, al estar `null + required`, mantienen el form
+    // permanentemente inválido → el botón "Crear" nunca se habilita.
+    //
+    // Solución: rellenar con defaults seguros del propio enum los 3 selects
+    // ocultos. El usuario podrá ajustarlos luego desde el form completo en el
+    // panel derecho del location manager. `type` se respeta en null para que
+    // el dropdown del modal muestre el placeholder y el usuario lo elija.
+    this.applyHiddenRequiredSelectDefaults();
+
+    this.form.updateValueAndValidity({ emitEvent: true });
     this.form.markAllAsTouched();
+  }
+
+  /**
+   * Asigna defaults a los selects required que existen en el FormGroup pero no
+   * tienen UI en este modal. Idempotente: solo escribe si el valor es `null`,
+   * lo que permite que un futuro `data.costCenter` precargado (edición) prevalezca.
+   */
+  private applyHiddenRequiredSelectDefaults(): void {
+    const forecastCtrl = this.form.controls.forecastModel;
+    if (forecastCtrl.value == null) {
+      const def = (CostCenterForecastModelSchema.options as readonly CostCenterForecastModel[])[0];
+      forecastCtrl.setValue(def, { emitEvent: false });
+    }
+
+    const statusCtrl = this.form.controls.status;
+    if (statusCtrl.value == null) {
+      const opts = LifecycleStatusSchema.options as readonly LifecycleStatus[];
+      const preferred = opts.find((o) => o === 'ACTIVE') ?? opts[0];
+      statusCtrl.setValue(preferred, { emitEvent: false });
+    }
+
+    const allocCtrl = this.form.controls.allocationMethod;
+    if (allocCtrl.value == null) {
+      const def = (CostAllocationMethodSchema.options as readonly CostAllocationMethod[])[0];
+      allocCtrl.setValue(def, { emitEvent: false });
+    }
   }
 
   selectTab(id: CostCenterDialogTabDef['id']): void {

@@ -14,6 +14,10 @@ import { buildInvoiceGoldenRecord } from '../../../mappers/invoice/process-invoi
 
 const READY_STATUS = 'READY_FOR_REVIEW' as const;
 const FAILED_STATUS = 'FAILED' as const;
+const PROCESSING_STATUS = 'PROCESSING' as const;
+const OCR_COMPLETED_STATUS = 'OCR_COMPLETED' as const;
+const AI_EXTRACTION_COMPLETED_STATUS = 'AI_EXTRACTION_COMPLETED' as const;
+const AI_VALIDATION_REQUIRED_STATUS = 'AI_VALIDATION_REQUIRED' as const;
 const NO_EMISSIONS_YET: InvoiceEmissionCalculations = { total_kg: 0, items: [] };
 
 export type ProcessInvoicePipelineDeps = {
@@ -39,13 +43,21 @@ export class ProcessInvoicePipelineUseCase {
     input: ProcessInvoicePipelineInputDto
   ): Promise<ResultType<ProcessInvoicePipelineOutputDto, string>> {
     try {
+      await this.notifyStatusSafely(input.sk, PROCESSING_STATUS, 'Pipeline started');
+
       const rawText = await this.deps.ocrService.extractText(input.bucket, input.key);
       if (!rawText) {
         throw new Error('OCR service returned empty content');
       }
+      await this.notifyStatusSafely(input.sk, OCR_COMPLETED_STATUS, 'OCR completed');
 
       const detectedCategory = await this.deps.categoryClassifier.classifyCategory(rawText);
       const aiAnalysis = await this.deps.aiAnalyzer.analyzeInvoice(rawText, detectedCategory);
+      await this.notifyStatusSafely(
+        input.sk,
+        AI_EXTRACTION_COMPLETED_STATUS,
+        'AI structured extraction completed'
+      );
 
       const goldenRecord = buildInvoiceGoldenRecord({
         orgId: input.orgId.startsWith('ORG#') ? input.orgId : `ORG#${input.orgId}`,
@@ -59,9 +71,9 @@ export class ProcessInvoicePipelineUseCase {
 
       await this.deps.goldenRecordRepository.persistGoldenRecord(goldenRecord);
 
-      await this.notifyReadyForReview(input.sk, aiAnalysis);
+      await this.notifyReadyForReview(input.sk, aiAnalysis, AI_VALIDATION_REQUIRED_STATUS);
 
-      return Result.ok({ status: READY_STATUS, goldenRecord });
+      return Result.ok({ status: AI_VALIDATION_REQUIRED_STATUS, goldenRecord });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown pipeline error';
       await this.notifyFailureSafely(input.sk, message);
@@ -69,9 +81,28 @@ export class ProcessInvoicePipelineUseCase {
     }
   }
 
+  private async notifyStatusSafely(
+    invoiceId: string,
+    status: string,
+    message: string,
+    payload: Record<string, unknown> | null = null
+  ): Promise<void> {
+    try {
+      await this.deps.statusNotifier.notifyStatus({
+        invoiceId,
+        status,
+        message,
+        payload
+      });
+    } catch {
+      // Canal lateral: nunca bloquea el pipeline.
+    }
+  }
+
   private async notifyReadyForReview(
     invoiceId: string,
-    aiAnalysis: Awaited<ReturnType<IInvoiceAiAnalyzerService['analyzeInvoice']>>
+    aiAnalysis: Awaited<ReturnType<IInvoiceAiAnalyzerService['analyzeInvoice']>>,
+    status: string = READY_STATUS
   ): Promise<void> {
     const source = aiAnalysis.source_data ?? {};
     const tech = aiAnalysis.technical_ids ?? {};
@@ -110,8 +141,8 @@ export class ProcessInvoicePipelineUseCase {
     try {
       await this.deps.statusNotifier.notifyStatus({
         invoiceId,
-        status: READY_STATUS,
-        message: 'Digitization complete',
+        status,
+        message: 'Digitization complete — human validation required',
         payload: uiPayload
       });
     } catch {

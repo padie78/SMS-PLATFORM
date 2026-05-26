@@ -10,6 +10,6 @@ export interface ProcessInvoicePipelineInputDto {
 
 /** Output exitoso del pipeline: el Golden Record persistido. */
 export interface ProcessInvoicePipelineOutputDto {
-  readonly status: 'READY_FOR_REVIEW';
+  readonly status: 'READY_FOR_REVIEW' | 'AI_VALIDATION_REQUIRED';
   readonly goldenRecord: InvoiceGoldenRecord;
 }

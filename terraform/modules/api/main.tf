@@ -83,7 +83,9 @@ resource "aws_appsync_resolver" "mutation_resolvers" {
   for_each = toset([
     "saveNode",
     "updateNode",
-    "deleteNode"
+    "deleteNode",
+    "createInvoiceDraft",
+    "commitInvoiceLifecycle"
   ])
 
   api_id      = aws_appsync_graphql_api.api.id
@@ -105,10 +107,24 @@ resource "aws_appsync_resolver" "mutation_resolvers" {
 # KPI / analytics: descomenta y alinea con schema.graphql cuando expongas esas Queries.
 # resource "aws_appsync_resolver" "kpi_resolvers" { ... }
 
-# getPresignedUrl: añade el campo al schema si lo necesitas; entonces enlaza Signer Lambda aquí.
+resource "aws_appsync_resolver" "get_presigned_url" {
+  api_id      = aws_appsync_graphql_api.api.id
+  type        = "Mutation"
+  field       = "getPresignedUrl"
+  data_source = aws_appsync_datasource.signer_lambda_ds.name
+
+  request_template  = file("${path.module}/resolvers/invoke-api-lambda-with-holding.vtl")
+  response_template = file("${path.module}/resolvers/lambda-default-response.vtl")
+
+  depends_on = [
+    aws_appsync_graphql_api.api,
+    aws_appsync_datasource.signer_lambda_ds,
+    aws_iam_role_policy.appsync_access_policy
+  ]
+}
 
 resource "aws_appsync_resolver" "api_lambda_queries" {
-  for_each = toset(["getTree", "getNode", "getInvoice"])
+  for_each = toset(["getTree", "getNode", "getInvoice", "getInvoiceLifecycle"])
 
   api_id      = aws_appsync_graphql_api.api.id
   type        = "Query"
