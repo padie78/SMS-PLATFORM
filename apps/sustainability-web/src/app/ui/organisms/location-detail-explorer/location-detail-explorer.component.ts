@@ -62,6 +62,6 @@ import { LocationDtoFormsHostComponent } from '../../../features/location/ui/for
 })
 export class LocationDetailExplorerComponent {
   /** Valor actual del nodo; el padre debe enlazar `location.selectedNode()` para que OnPush reciba inputs nuevos al cambiar la señal. */
-  @Input({ required: true }) node!: SmsLocationNode | null;
+  @Input() node: SmsLocationNode | null = null;
 }
 

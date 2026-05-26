@@ -24,8 +24,14 @@ export function buildLocationNodeTooltipText(node: SmsLocationNode): string {
       lines.push(`Región · ${node.name}`);
       if (meta.countryCode) lines.push(`País: ${String(meta.countryCode).toUpperCase()}`);
       pushLine(lines, meta.code, `Código región: ${meta.code}`);
-      if (typeof meta.latitude === 'number' && typeof meta.longitude === 'number') {
-        lines.push(`Ubicación: ${fmtNum(meta.latitude, { maximumFractionDigits: 5 })}, ${fmtNum(meta.longitude, { maximumFractionDigits: 5 })}`);
+      if (
+        meta.coordinates &&
+        typeof meta.coordinates.lat === 'number' &&
+        typeof meta.coordinates.lng === 'number'
+      ) {
+        lines.push(
+          `Ubicación: ${fmtNum(meta.coordinates.lat, { maximumFractionDigits: 5 })}, ${fmtNum(meta.coordinates.lng, { maximumFractionDigits: 5 })}`
+        );
       }
       pushLine(lines, meta.description, `Notas: ${meta.description}`);
       break;
@@ -38,8 +44,14 @@ export function buildLocationNodeTooltipText(node: SmsLocationNode): string {
         lines.push(`Objetivo energético: ${fmtNum(meta.energyTarget)} kWh`);
       }
       pushLine(lines, meta.timezone, `Zona horaria: ${meta.timezone}`);
-      if (typeof meta.latitude === 'number' && typeof meta.longitude === 'number') {
-        lines.push(`Coordenadas: ${fmtNum(meta.latitude, { maximumFractionDigits: 5 })}, ${fmtNum(meta.longitude, { maximumFractionDigits: 5 })}`);
+      if (
+        meta.coordinates &&
+        typeof meta.coordinates.lat === 'number' &&
+        typeof meta.coordinates.lng === 'number'
+      ) {
+        lines.push(
+          `Coordenadas: ${fmtNum(meta.coordinates.lat, { maximumFractionDigits: 5 })}, ${fmtNum(meta.coordinates.lng, { maximumFractionDigits: 5 })}`
+        );
       }
       break;
 
@@ -63,9 +75,13 @@ export function buildLocationNodeTooltipText(node: SmsLocationNode): string {
       if (meta.hasBms === true) lines.push('BMS: sí');
       else if (meta.hasBms === false) lines.push('BMS: no');
       pushLine(lines, meta.mainFuelType, `Combustible principal: ${meta.mainFuelType}`);
-      if (typeof meta.buildingLatitude === 'number' && typeof meta.buildingLongitude === 'number') {
+      if (
+        meta.coordinates &&
+        typeof meta.coordinates.lat === 'number' &&
+        typeof meta.coordinates.lng === 'number'
+      ) {
         lines.push(
-          `Ubicación: ${fmtNum(meta.buildingLatitude, { maximumFractionDigits: 5 })}, ${fmtNum(meta.buildingLongitude, { maximumFractionDigits: 5 })}`
+          `Ubicación: ${fmtNum(meta.coordinates.lat, { maximumFractionDigits: 5 })}, ${fmtNum(meta.coordinates.lng, { maximumFractionDigits: 5 })}`
         );
       }
       break;

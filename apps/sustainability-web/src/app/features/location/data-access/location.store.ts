@@ -1,7 +1,7 @@
 import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import type { TreeNode } from 'primeng/api';
-import { Subscription, firstValueFrom } from 'rxjs';
+import { Subscription } from 'rxjs';
 import type { SmsLocationNode, SmsLocationNodeMetadata, SmsLocationNodeType } from '../../../core/models/sms-location-node.model';
 import { LOCATION_API_BASE_URL, LOCATION_MOCK_STORAGE_KEY, LOCATION_USE_MOCK } from '../data/location.mock';
 import type { GraphqlNodeDto, LocationMutationResponse } from './location-api.models';
@@ -33,7 +33,6 @@ type LocationDraftSnapshot = {
 
 @Injectable({ providedIn: 'root' })
 export class LocationService {
-  private readonly http = inject(HttpClient);
   private readonly nodeApi = inject(LocationNodeAppSyncService);
   private readonly destroyRef = inject(DestroyRef);
 

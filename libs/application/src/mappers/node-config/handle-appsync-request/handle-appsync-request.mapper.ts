@@ -20,6 +20,20 @@ function metadataToString(meta: unknown): string | null {
 }
 
 /**
+ * Filtra atributos internos (`PK`, `holdingId`) antes de devolver el ítem al
+ * cliente GraphQL. `PK`/`holdingId` codifican `TENANT#…#ORG#…`, considerados
+ * datos sensibles de aislamiento multi-tenant; `SK` ya se expone como `id`.
+ */
+function sanitizeItemForResponse(item: NodeConfigItem): Record<string, unknown> {
+  const {
+    PK: _pk,
+    holdingId: _hid,
+    ...publicFields
+  } = item as NodeConfigItem & { PK?: unknown; holdingId?: unknown };
+  return publicFields;
+}
+
+/**
  * Acepta `metadata` proveniente de GraphQL (string JSON, objeto plano o `null`)
  * y la normaliza a `Record<string, unknown>`. Devuelve `{}` si la entrada no
  * es serializable o JSON inválido.
@@ -75,7 +89,7 @@ export function mutationResponseFromItem(item: NodeConfigItem | null | undefined
     id: item.SK ?? null,
     nodeId: null,
     path: item.path ?? null,
-    entity: JSON.stringify(item)
+    entity: JSON.stringify(sanitizeItemForResponse(item))
   };
 }
 
@@ -99,6 +113,6 @@ export function mutationResponseFromOrganizationSave(
     id: result.item.SK ?? null,
     nodeId: result.nodeId ?? null,
     path: result.path ?? result.item.path ?? null,
-    entity: JSON.stringify(result.item)
+    entity: JSON.stringify(sanitizeItemForResponse(result.item))
   };
 }

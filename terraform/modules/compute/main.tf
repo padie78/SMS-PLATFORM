@@ -51,10 +51,12 @@ data "archive_file" "signer_zip" {
 }
 
 data "archive_file" "api_lambda_zip" {
-  type        = "zip"
-  source_dir  = "${path.root}/../lambda_code/api_lambda"
+  type = "zip"
+  # IMPORTANTE: empaquetar el bundle Nx (esbuild) — el raw `lambda_code/api_lambda`
+  # NO tiene `node_modules` ni resuelve los alias `@sms/*` en runtime.
+  # Requiere `nx build api_lambda` (o `nx run-many -t build`) previo a `terraform apply`.
+  source_dir  = "${path.root}/../dist/lambda_code/api_lambda"
   output_path = "${path.module}/zips/api_lambda.zip"
-  excludes    = local.lambda_zip_excludes
 }
 
 data "archive_file" "analytics_zip" {
@@ -148,7 +150,8 @@ locals {
 resource "aws_lambda_function" "api_lambda" {
   function_name = "${var.project_name}-api-${var.environment}"
   filename      = data.archive_file.api_lambda_zip.output_path
-  handler       = "src/index.handler"
+  # Bundle producido por esbuild → `main.js` con `export const handler`.
+  handler       = "main.handler"
   runtime       = "nodejs20.x"
   role          = var.api_lambda_role_arn
   timeout       = 15

@@ -17,10 +17,14 @@ import {
   createDynamoDocumentClient
 } from "@sms/infrastructure";
 
-const tableName =
-  process.env.DYNAMO_TABLE ||
-  process.env.DATABASE_NAME ||
-  "sms-platform-dev-emissions";
+const tableName = process.env.DYNAMO_TABLE || process.env.DATABASE_NAME;
+if (!tableName) {
+  // Fail-fast: nunca hard-codear nombre de tabla. Un fallback silencioso
+  // en producción puede provocar escrituras cruzadas entre entornos.
+  throw new Error(
+    "api_lambda misconfigured: DYNAMO_TABLE (o DATABASE_NAME) es obligatorio."
+  );
+}
 
 const doc = createDynamoDocumentClient();
 

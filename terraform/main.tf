@@ -104,8 +104,7 @@ module "api" {
   api_lambda_role_id         = module.iam.api_lambda_role_name # <--- Cambialo aquí
 
   # Persistencia
-  dynamo_table_name = module.database.table_name
-  dynamo_table_arn  = module.database.table_arn
+  # NOTA: dynamo_* removidos del módulo api — AppSync solo invoca Lambdas, no Dynamo.
   upload_bucket_arn = module.storage.bucket_arn
 
   # Seguridad Cognito

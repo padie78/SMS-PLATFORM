@@ -39,15 +39,9 @@ variable "kpi_lambda_arn" {
 # ==============================================================================
 # 3. CONEXIÓN CON DATA (DynamoDB)
 # ==============================================================================
-variable "dynamo_table_name" {
-  description = "Nombre de la tabla DynamoDB para el Data Source nativo"
-  type        = string
-}
-
-variable "dynamo_table_arn" {
-  description = "ARN de la tabla DynamoDB para los permisos de IAM de AppSync"
-  type        = string
-}
+# NOTA: las variables `dynamo_table_name` / `dynamo_table_arn` fueron retiradas.
+# AppSync no accede a DynamoDB directamente; toda I/O pasa por la `api_lambda`
+# (que recibe DYNAMO_TABLE en su propio environment desde el módulo compute).
 
 
 # ==============================================================================

@@ -1,19 +1,13 @@
-## Invoca APILambdaDS inyectando holdingId desde Cognito claims (multi-tenant).
-## Prioridad: custom:holding_id → custom:organization_id → identity.sub (no claims["sub"]).
-## Con User Pools, `$ctx.identity.sub` está garantizado antes del resolver cuando el JWT es válido.
-#set($hid = $ctx.identity.claims["custom:holding_id"])
-#if($util.isNullOrBlank($hid))
-  #set($hid = $ctx.identity.claims["custom:organization_id"])
-#end
-#if($util.isNullOrBlank($hid))
-  #set($hid = $ctx.identity.sub)
-#end
-#if($util.isNullOrBlank($hid))
-  $util.unauthorized()
-#end
+## Invoca APILambdaDS para todos los resolvers GraphQL.
+## NOTA: el `holdingId` se resuelve íntegramente en Lambda (`appsync-event.parser.ts`)
+## a partir de `event.identity.claims` (custom:tenant_id, custom:organization_id, sub).
+## Cualquier campo top-level que se inyecte aquí sería ignorado, así que NO se inyecta
+## para mantener el contrato del evento mínimo y auditable.
+##
+## La autenticación está garantizada a nivel API (Cognito User Pools); si el JWT no
+## fuera válido, AppSync nunca llegaría a ejecutar este resolver.
 
 #set($payload = {})
-$util.qr($payload.put("holdingId", $hid))
 $util.qr($payload.put("arguments", $ctx.arguments))
 $util.qr($payload.put("identity", $ctx.identity))
 $util.qr($payload.put("info", $ctx.info))

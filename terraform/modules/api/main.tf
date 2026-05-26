@@ -128,6 +128,10 @@ resource "aws_appsync_resolver" "api_lambda_queries" {
 # ==============================================================================
 # 5. POLÍTICA DE ACCESO (APPSYNC -> LAMBDA)
 # ==============================================================================
+## Política del rol runtime de AppSync.
+## Solo necesita invocar las Lambdas configuradas como data sources. NO se otorga
+## acceso directo a DynamoDB porque NINGÚN resolver usa `AWS_LAMBDA` → Dynamo
+## directamente: toda lectura/escritura pasa por la `api_lambda` (con su rol propio).
 resource "aws_iam_role_policy" "appsync_access_policy" {
   name = "AppSyncAccessPolicy"
   role = aws_iam_role.appsync_runtime_role.id
@@ -144,12 +148,6 @@ resource "aws_iam_role_policy" "appsync_access_policy" {
           var.signer_lambda_arn, "${var.signer_lambda_arn}:*",
           var.analytics_lambda_arn, "${var.analytics_lambda_arn}:*"
         ]
-      },
-      {
-        Sid      = "AllowDynamoAccess"
-        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Query", "dynamodb:BatchGetItem"]
-        Effect   = "Allow"
-        Resource = [var.dynamo_table_arn, "${var.dynamo_table_arn}/index/*"]
       }
     ]
   })
@@ -163,16 +161,15 @@ resource "aws_iam_role_policy" "appsync_access_policy" {
 # que deberías tener definido donde creaste la Lambda. 
 # Si tu recurso de rol se llama diferente, cambia "api_lambda_role" abajo.
 
+## Política extendida del API Lambda.
+## Principio de mínimo privilegio (Well-Architected: Security):
+##   - Solo S3 read en el bucket de upload (necesario para futura lectura de
+##     adjuntos en queries `getInvoice`).
+##   - NO se otorgan permisos de Textract ni Bedrock: ese trabajo lo realiza el
+##     `worker_lambda` (OCR) y un pipeline de IA dedicado, no el resolver API.
 resource "aws_iam_role_policy" "api_lambda_extended_policy" {
   name = "${var.project_name}-api-extended-policy-${var.environment}"
-
-  # Si el rol está definido en este mismo módulo:
-  # role = aws_iam_role.api_lambda_role.id 
-
-  # Si el ID viene de una variable que SI existe, o si prefieres usar el nombre directo:
-  role = var.api_lambda_role_id # <--- Usamos la variable directa  # O mejor aún, asegúrate de pasarle el ID correcto desde el módulo donde resides.
-  # Por ahora, usemos el ID que terraform espera recibir para la Lambda API:
-  # role = var.api_lambda_role_name 
+  role = var.api_lambda_role_id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -185,16 +182,6 @@ resource "aws_iam_role_policy" "api_lambda_extended_policy" {
           var.upload_bucket_arn,
           "${var.upload_bucket_arn}/*"
         ]
-      },
-      {
-        Sid    = "AllowAIProcessing"
-        Effect = "Allow"
-        Action = [
-          "textract:AnalyzeDocument",
-          "textract:DetectDocumentText",
-          "bedrock:InvokeModel"
-        ]
-        Resource = "*"
       }
     ]
   })

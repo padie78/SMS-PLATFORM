@@ -1,4 +1,4 @@
-import type { CostCenterDTO, TariffDTO } from '@sms/common';
+import type { CostCenterDTO, GeoCoordinatesDTO, TariffDTO } from '@sms/common';
 import type { TreeNode } from 'primeng/api';
 
 export type SmsLocationNodeType =
@@ -33,8 +33,12 @@ export interface SmsLocationNodeMetadata {
   organizationId?: string | null;
   countryCode?: string | null;
   description?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
+  /**
+   * Coordenadas geográficas canónicas (alineadas con `RegionDTO.coordinates` /
+   * `BuildingDTO.coordinates` en `@sms/common`). Persistidas anidadas en
+   * DynamoDB `metadata.coordinates`.
+   */
+  coordinates?: GeoCoordinatesDTO | null;
 
   /** BranchDTO */
   facilityType?: string | null;
@@ -60,8 +64,6 @@ export interface SmsLocationNodeMetadata {
   hasBms?: boolean | null;
   bmsVendor?: string | null;
   mainFuelType?: string | null;
-  buildingLatitude?: number | null;
-  buildingLongitude?: number | null;
   regionId?: string | null;
   branchOrganizationId?: string | null;
   /** Branch / Building / Asset / Meter: IDs de centros de costo asignados (Dynamo: `L` de `S`). */
