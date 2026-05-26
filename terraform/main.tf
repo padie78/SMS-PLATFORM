@@ -83,6 +83,8 @@ module "compute" {
 
   allow_tenant_fallback_from_sub = var.api_lambda_allow_tenant_fallback_from_sub != null ? var.api_lambda_allow_tenant_fallback_from_sub : contains(["dev", "development", "local"], lower(var.environment))
 
+  allow_tenant_as_org_fallback = var.api_lambda_allow_tenant_as_org_fallback != null ? var.api_lambda_allow_tenant_as_org_fallback : contains(["dev", "development", "local"], lower(var.environment))
+
   default_organization_scope_id = var.post_confirmation_default_organization_id
 }
 

@@ -136,6 +136,8 @@ input CreateInvoiceDraftInput {
   branchId: ID
   buildingId: ID
   documentHashSha256: String
+  """Scope organizacional. Opcional: si se omite se infiere de `custom:organization_id`."""
+  orgId: ID
 }
 
 input InvoiceFieldCorrectionInput {
@@ -152,18 +154,21 @@ input ConfirmInvoiceExtractionInput {
   extractionDraftVersion: Int!
   corrections: [InvoiceFieldCorrectionInput!]
   notes: String
+  orgId: ID
 }
 
 input RejectInvoiceInput {
   invoiceId: ID!
   expectedVersion: Int
   reason: String!
+  orgId: ID
 }
 
 input RetryInvoiceProcessingInput {
   invoiceId: ID!
   expectedVersion: Int
   reason: String
+  orgId: ID
 }
 
 input CommitInvoiceLifecycleInput {
@@ -192,6 +197,7 @@ input CommitInvoiceLifecycleInput {
   corrections: [InvoiceFieldCorrectionInput!]
   notes: String
   wipSnapshotHash: String
+  orgId: ID
 }
 
 # --- CONSULTAS ---

@@ -180,6 +180,7 @@ locals {
       SQS_QUEUE_URL = var.sqs_queue_url
     },
     var.allow_tenant_fallback_from_sub ? { ALLOW_TENANT_FALLBACK_FROM_SUB = "true" } : {},
+    var.allow_tenant_as_org_fallback ? { ALLOW_TENANT_AS_ORG_FALLBACK = "true" } : {},
     trimspace(var.default_organization_scope_id) != "" ? { DEFAULT_ORGAN_SCOPE_ID = trimspace(var.default_organization_scope_id) } : {}
   )
 }

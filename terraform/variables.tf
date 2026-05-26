@@ -80,6 +80,16 @@ variable "api_lambda_allow_tenant_fallback_from_sub" {
   EOT
 }
 
+variable "api_lambda_allow_tenant_as_org_fallback" {
+  type        = bool
+  nullable    = true
+  default     = null
+  description = <<-EOT
+    Si true, la Lambda usa tenantId como orgId cuando falta custom:organization_id e input.orgId.
+    Útil para deployments single-org / dev. null = automático: true en dev/development/local, false en stg/prod.
+  EOT
+}
+
 variable "auto_deploy" {
   type        = bool
   default     = true

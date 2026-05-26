@@ -1,6 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import type { CommitInvoiceLifecycleInput, EnergyServiceType } from '@sms/common';
 import { generateClient } from 'aws-amplify/api';
+import { AuthService } from '../../../services/infrastructure/auth.service';
+import { GlobalSettingsService } from '../../../services/state/global-settings.service';
 import { LoggerService } from '../../../services/utils/logger.service';
 
 export interface CreateInvoiceDraftApiInput {
@@ -43,6 +45,20 @@ type GraphqlResult<T> = { data?: T };
 export class InvoiceLifecycleApiService {
   private readonly client = generateClient();
   private readonly logger = inject(LoggerService);
+  private readonly auth = inject(AuthService);
+  private readonly globalSettings = inject(GlobalSettingsService);
+
+  /**
+   * Resuelve un orgId para inyectar en `input.orgId` cuando el token Cognito no trae
+   * `custom:organization_id` (api_lambda lo usa vía `mergePartitionContextFromGraphQLArgs`).
+   * Prioridad: claim Cognito → `GlobalSettingsService.organizationId`.
+   */
+  private async resolveOrgIdOverride(): Promise<string | undefined> {
+    const fromClaim = await this.auth.getOrganizationIdClaim();
+    if (fromClaim) return fromClaim;
+    const fromGlobal = this.globalSettings.snapshot().organizationId;
+    return fromGlobal?.trim() || undefined;
+  }
 
   async createInvoiceDraft(input: CreateInvoiceDraftApiInput): Promise<InvoiceLifecycleMutationResult> {
     const mutation = `
@@ -58,9 +74,10 @@ export class InvoiceLifecycleApiService {
         }
       }
     `;
+    const orgId = await this.resolveOrgIdOverride();
     const data = await this.executeGraphql<{
       createInvoiceDraft: InvoiceLifecycleMutationResult;
-    }>(mutation, { input });
+    }>(mutation, { input: { ...input, ...(orgId ? { orgId } : {}) } });
     const result = data.createInvoiceDraft;
     if (!result?.success) {
       throw new Error(result?.message ?? 'createInvoiceDraft failed');
@@ -84,9 +101,10 @@ export class InvoiceLifecycleApiService {
         }
       }
     `;
+    const orgId = await this.resolveOrgIdOverride();
     const data = await this.executeGraphql<{
       commitInvoiceLifecycle: InvoiceLifecycleMutationResult;
-    }>(mutation, { input });
+    }>(mutation, { input: { ...input, ...(orgId ? { orgId } : {}) } });
     const result = data.commitInvoiceLifecycle;
     if (!result?.success) {
       throw new Error(result?.message ?? 'commitInvoiceLifecycle failed');
@@ -102,8 +120,9 @@ export class InvoiceLifecycleApiService {
         }
       }
     `;
+    const orgId = await this.resolveOrgIdOverride();
     const data = await this.executeGraphql<{ rejectInvoice: InvoiceLifecycleMutationResult }>(mutation, {
-      input: { invoiceId, reason, expectedVersion }
+      input: { invoiceId, reason, expectedVersion, ...(orgId ? { orgId } : {}) }
     });
     const result = data.rejectInvoice;
     if (!result?.success) throw new Error(result?.message ?? 'rejectInvoice failed');
@@ -122,9 +141,10 @@ export class InvoiceLifecycleApiService {
         }
       }
     `;
+    const orgId = await this.resolveOrgIdOverride();
     const data = await this.executeGraphql<{ retryInvoiceProcessing: InvoiceLifecycleMutationResult }>(
       mutation,
-      { input: { invoiceId, expectedVersion, reason } }
+      { input: { invoiceId, expectedVersion, reason, ...(orgId ? { orgId } : {}) } }
     );
     const result = data.retryInvoiceProcessing;
     if (!result?.success) throw new Error(result?.message ?? 'retryInvoiceProcessing failed');

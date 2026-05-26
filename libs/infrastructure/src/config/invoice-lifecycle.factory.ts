@@ -118,10 +118,23 @@ export function createAppSyncApiCombinedHandler(
           entity: null
         };
       }
-      if (!partitionContext.organizationScopeId?.trim()) {
+
+      let orgId = partitionContext.organizationScopeId?.trim() ?? '';
+
+      // Fallback dev/single-org: tenantId == orgId (gated por env var).
+      if (!orgId && process.env.ALLOW_TENANT_AS_ORG_FALLBACK === 'true') {
+        console.warn(
+          '[MULTI_TENANT] organizationScopeId ausente; usando tenantId como orgId (ALLOW_TENANT_AS_ORG_FALLBACK).'
+        );
+        orgId = partitionContext.tenantId;
+      }
+
+      if (!orgId) {
         return {
           success: false,
-          message: 'org scope required (custom:organization_id or orgId arg)',
+          message:
+            'Aislamiento: falta org scope. Define `custom:organization_id` en Cognito, ' +
+            'envía `input.orgId` en la mutation, o habilita ALLOW_TENANT_AS_ORG_FALLBACK=true en api_lambda (single-org/dev).',
           id: null,
           nodeId: null,
           path: null,
@@ -134,7 +147,7 @@ export function createAppSyncApiCombinedHandler(
         fieldName,
         auth: {
           tenantId: partitionContext.tenantId,
-          orgId: partitionContext.organizationScopeId,
+          orgId,
           userId,
           userEmail
         },

@@ -85,7 +85,10 @@ export const CommitInvoiceLifecycleInputSchema = z
      * Hash SHA-256 del WIP snapshot que el FE consolidó. Útil para tracking
      * si dos pestañas del browser intentaron commitear simultáneamente.
      */
-    wipSnapshotHash: z.string().length(64).optional()
+    wipSnapshotHash: z.string().length(64).optional(),
+
+    /** Override opcional del scope organizacional (si Cognito no lo trae). */
+    orgId: SmsIdSchema.optional()
   })
   .strict()
   .superRefine((v, ctx) => {

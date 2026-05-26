@@ -81,7 +81,10 @@ export const ConfirmInvoiceExtractionInputSchema = z
     // ── Auditoría/trazabilidad ─────────────────────────────────────────────
     corrections: z.array(InvoiceFieldCorrectionSchema).default([]),
     /** Notas internas del usuario (no van al Golden Record). */
-    notes: z.string().max(2048).optional()
+    notes: z.string().max(2048).optional(),
+
+    /** Override opcional del scope organizacional (si Cognito no lo trae). */
+    orgId: SmsIdSchema.optional()
   })
   .strict()
   .superRefine((v, ctx) => {
@@ -125,7 +128,9 @@ export const CreateInvoiceDraftInputSchema = z
     branchId: SmsIdSchema.optional(),
     buildingId: SmsIdSchema.optional(),
     /** Hash SHA-256 calculado client-side para dedup. */
-    documentHashSha256: z.string().length(64).optional()
+    documentHashSha256: z.string().length(64).optional(),
+    /** Override opcional del scope organizacional (si Cognito no lo trae). */
+    orgId: SmsIdSchema.optional()
   })
   .strict();
 export type CreateInvoiceDraftInput = z.infer<typeof CreateInvoiceDraftInputSchema>;
@@ -134,7 +139,8 @@ export const RejectInvoiceInputSchema = z
   .object({
     invoiceId: SmsIdSchema,
     expectedVersion: z.number().int().nonnegative(),
-    reason: z.string().min(3).max(512)
+    reason: z.string().min(3).max(512),
+    orgId: SmsIdSchema.optional()
   })
   .strict();
 export type RejectInvoiceInput = z.infer<typeof RejectInvoiceInputSchema>;
@@ -144,7 +150,8 @@ export const RetryInvoiceProcessingInputSchema = z
     invoiceId: SmsIdSchema,
     expectedVersion: z.number().int().nonnegative(),
     /** Causa documentada (opcional) — útil para distinguir retries automáticos vs manuales. */
-    reason: z.string().max(512).optional()
+    reason: z.string().max(512).optional(),
+    orgId: SmsIdSchema.optional()
   })
   .strict();
 export type RetryInvoiceProcessingInput = z.infer<typeof RetryInvoiceProcessingInputSchema>;
