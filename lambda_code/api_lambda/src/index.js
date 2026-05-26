@@ -9,7 +9,7 @@
  * Variables de entorno:
  *  - DYNAMO_TABLE / DATABASE_NAME (obligatoria)
  *  - SQS_QUEUE_URL (retryInvoiceProcessing → re-enqueue worker)
- *  - DEFAULT_ORGAN_SCOPE_ID, ALLOW_TENANT_FALLBACK_FROM_SUB (dev)
+ *  - DEFAULT_ORGAN_SCOPE_ID, ALLOW_TENANT_FALLBACK_FROM_SUB, ALLOW_TENANT_AS_ORG_FALLBACK (dev)
  */
 import {
   createAppSyncApiCombinedHandler,
