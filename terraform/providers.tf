@@ -21,6 +21,12 @@ terraform {
       source  = "hashicorp/archive"
       version = ">= 2.5.0"
     }
+    # Usado para ejecutar `nx build` antes de empaquetar los Lambdas que tienen
+    # sources TypeScript (alias `@sms/*`). Ver `modules/compute/main.tf`.
+    external = {
+      source  = "hashicorp/external"
+      version = ">= 2.3.0"
+    }
   }
 }
 

@@ -50,12 +50,31 @@ data "archive_file" "signer_zip" {
   excludes    = local.lambda_zip_excludes
 }
 
+# -----------------------------------------------------------------------------
+# api_lambda: empaquetar el bundle Nx (esbuild) — NO el source raw.
+# -----------------------------------------------------------------------------
+# El source raw `lambda_code/api_lambda` no tiene `node_modules` ni resuelve los
+# alias `@sms/*` en runtime. El bundle bundleado por esbuild en `dist/...` SÍ.
+#
+# `data.external.build_api_lambda` se evalúa en `terraform plan` y dispara el
+# build Nx, garantizando que el directorio exista antes de que `archive_file`
+# intente leerlo. Si ya está cacheado por Nx, el rebuild es ~1s.
+# Para saltar el build en CI cuando otro step ya lo hizo, exportar
+# `SMS_SKIP_LAMBDA_BUILD=1`.
+data "external" "build_api_lambda" {
+  program = [
+    "bash",
+    "${path.root}/scripts/build-lambda.sh",
+    "api-lambda",
+    # abspath() obligatorio: el script hace `cd $REPO_ROOT` antes de validar
+    # y un path relativo cambiaría de significado tras el `cd`.
+    abspath("${path.root}/../dist/lambda_code/api_lambda"),
+  ]
+}
+
 data "archive_file" "api_lambda_zip" {
-  type = "zip"
-  # IMPORTANTE: empaquetar el bundle Nx (esbuild) — el raw `lambda_code/api_lambda`
-  # NO tiene `node_modules` ni resuelve los alias `@sms/*` en runtime.
-  # Requiere `nx build api_lambda` (o `nx run-many -t build`) previo a `terraform apply`.
-  source_dir  = "${path.root}/../dist/lambda_code/api_lambda"
+  type        = "zip"
+  source_dir  = data.external.build_api_lambda.result.bundle_dir
   output_path = "${path.module}/zips/api_lambda.zip"
 }
 
