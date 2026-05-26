@@ -46,7 +46,7 @@ export class AppSyncApiService {
     const cleanFileName = fileName.split('\\').pop()?.split('/').pop() ?? fileName;
 
     const mutation = `
-      mutation GetUrl($name: String!, $type: String!, $id: String!) {
+      mutation GetUrl($name: String!, $type: String!, $id: ID!) {
         getPresignedUrl(fileName: $name, fileType: $type, invoiceId: $id) {
           uploadURL
           key
