@@ -6,8 +6,7 @@ import type {
 } from '../../../use-cases/invoice/types/invoice-ai-analysis.types.js';
 import type {
   InvoiceGoldenRecord,
-  InvoiceGoldenRecordExtractedData,
-  InvoiceGoldenRecordMetadata
+  InvoiceGoldenRecordExtractedData
 } from '../../../use-cases/invoice/types/invoice-golden-record.types.js';
 
 const ANOMALY_UNIT_PRICE_THRESHOLD = 0.25;
@@ -37,7 +36,7 @@ export interface BuildInvoiceGoldenRecordInput {
   readonly emissions: InvoiceEmissionCalculations;
   readonly status: string;
   readonly category: string;
-  readonly originalMetadata?: InvoiceGoldenRecordMetadata | Record<string, unknown>;
+  readonly originalMetadata?: Record<string, unknown>;
 }
 
 /**
@@ -60,77 +59,71 @@ export function buildInvoiceGoldenRecord(input: BuildInvoiceGoldenRecordInput): 
     ? numberOrZero(source.total_amount.total_with_tax)
     : numberOrZero(source.total_amount);
 
-  const taxAmount = isTotalAmountObject(source.total_amount)
-    ? numberOrZero(source.total_amount.tax_amount)
-    : numberOrZero(source.tax_amount);
-
-  const netAmount = isTotalAmountObject(source.total_amount)
-    ? numberOrZero(source.total_amount.net_amount)
-    : numberOrZero(source.net_amount);
-
   const emissionLines = input.aiAnalysis.emission_lines ?? [];
   const totalConsumption = sumKwhConsumption(emissionLines);
   const mainUnit = findMainKwhUnit(emissionLines);
   const unitPrice = totalConsumption > 0 ? totalAmount / totalConsumption : 0;
 
   const extractedData: InvoiceGoldenRecordExtractedData = {
-    invoice_number: source.invoice_number ?? null,
-    invoice_date: source.invoice_date ?? null,
-    vendor: source.vendor?.name ?? 'Unknown',
-    customer: (source.customer ?? {}) as Record<string, unknown>,
-    cups: technical.cups ?? null,
-    contract_reference: technical.contract_reference ?? null,
-    contracted_power: {
-      p1: technical.contracted_power_p1 ?? null,
-      p2: technical.contracted_power_p2 ?? null
-    },
-    tariff: technical.tariff ?? null,
-    total_amount: totalAmount,
-    tax_amount: taxAmount,
-    net_amount: netAmount,
-    currency: source.currency ?? 'EUR',
     billing_period: {
-      start: billing.start ?? null,
-      end: billing.end ?? null
+      start: billing.start ?? source.invoice_date ?? now.slice(0, 10),
+      end: billing.end ?? source.invoice_date ?? now.slice(0, 10)
     },
-    lines: emissionLines
+    invoice_date: source.invoice_date ?? now.slice(0, 10),
+    invoice_number: source.invoice_number ?? 'SIN-NUMERO',
+    total_amount: totalAmount,
+    vendor: source.vendor?.name ?? 'Unknown',
+    VENDOR_TAX_ID: source.vendor?.tax_id ?? 'UNKNOWN'
   };
 
-  const climatiqResult: InvoiceGoldenRecord['climatiq_result'] =
-    input.emissions && Object.keys(input.emissions).length > 0
-      ? {
-          co2e: numberOrZero(input.emissions.co2e ?? input.emissions.total_kg),
-          co2e_unit: input.emissions.co2e_unit ?? 'kg',
-          activity_id: input.emissions.activity_id ?? 'unknown',
-          timestamp: now
-        }
-      : {};
+  const climatiqResult: InvoiceGoldenRecord['climatiq_result'] = {
+    co2e: numberOrZero(input.emissions.co2e ?? input.emissions.total_kg),
+    co2e_unit: input.emissions.co2e_unit ?? 'kg',
+    timestamp: now
+  };
 
   const cleanMetadata = (input.originalMetadata ?? {}) as Record<string, unknown>;
-  const metadata: InvoiceGoldenRecordMetadata = {
-    ...cleanMetadata,
-    s3_key: typeof cleanMetadata.s3_key === 'string' ? cleanMetadata.s3_key : null,
-    is_draft: false
-  };
-
   return {
     PK: cleanPK,
     SK: input.sk,
-    status: input.status || 'READY_FOR_REVIEW',
-    processed_at: now,
-    updated_at: now,
-    analytics: {
-      confidence_score: numberOrZero(input.aiAnalysis.confidence_score) || DEFAULT_CONFIDENCE,
-      anomaly_detected: unitPrice > ANOMALY_UNIT_PRICE_THRESHOLD
-    },
     ai_analysis: {
+      activity_id: input.emissions.activity_id ?? 'unknown_activity',
+      calculation_method: 'consumption_based',
+      confidence_score: numberOrZero(input.aiAnalysis.confidence_score) || DEFAULT_CONFIDENCE,
+      requires_review: unitPrice > ANOMALY_UNIT_PRICE_THRESHOLD,
       service_type: input.category || 'ELECTRICITY',
       value: totalConsumption,
       unit: mainUnit,
-      status_triage: 'DONE'
+      year: Number(input.aiAnalysis.analytics_metadata?.year ?? new Date(now).getUTCFullYear())
+    },
+    analytics_dimensions: {
+      asset_id: technical.meter_id ?? technical.cups ?? 'UNKNOWN',
+      branch_id: String(input.aiAnalysis.analytics_metadata?.facility_id ?? 'UNKNOWN'),
+      period_month: Number(input.aiAnalysis.analytics_metadata?.month ?? new Date(now).getUTCMonth() + 1),
+      period_year: Number(input.aiAnalysis.analytics_metadata?.year ?? new Date(now).getUTCFullYear()),
+      sector: String(input.aiAnalysis.analytics_metadata?.sector ?? 'UNKNOWN')
     },
     climatiq_result: climatiqResult,
     extracted_data: extractedData,
-    metadata
+    metadata: {
+      ...cleanMetadata,
+      s3_key: typeof cleanMetadata.s3_key === 'string' ? cleanMetadata.s3_key : '',
+      status: 'PROCESSED',
+      technical_hash: String(cleanMetadata.technical_hash ?? 'unknown'),
+      thought_process: {
+        detected_raw_values: emissionLines.map((line) => `${line.value} ${line.unit ?? ''}`.trim()),
+        missing_data_strategy: String(
+          input.aiAnalysis.audit_thought_process?.missing_data_strategy ??
+            'No missing data strategy reported by model.'
+        ),
+        monetary_vs_physical_check: String(
+          input.aiAnalysis.audit_thought_process?.monetary_vs_physical_check ??
+            'Physical and monetary lines were reviewed by the invoice analyzer.'
+        )
+      },
+      upload_date: String(cleanMetadata.upload_date ?? now)
+    },
+    processed_at: now,
+    total_days_prorated: 0
   };
 }

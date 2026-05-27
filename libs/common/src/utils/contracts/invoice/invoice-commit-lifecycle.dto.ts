@@ -76,6 +76,14 @@ export const CommitInvoiceLifecycleInputSchema = z
     buildingId: SmsIdSchema,
     costCenterId: SmsIdSchema.optional(),
     assetId: SmsIdSchema.optional(),
+    /** Sector analítico para dashboards ESG (p. ej. COMMERCIAL, INDUSTRIAL). */
+    sector: z.string().min(1).max(64).optional(),
+    /** Activity ID de Climatiq/estrategia IA si ya fue resuelto antes del commit. */
+    activityId: z.string().min(1).max(160).optional(),
+    calculationMethod: z
+      .enum(['consumption_based', 'spend_based', 'fuel_based'])
+      .optional(),
+    requiresReview: z.boolean().optional(),
 
     // ── Auditoría/trazabilidad ─────────────────────────────────────────────
     corrections: z.array(InvoiceFieldCorrectionSchema).default([]),

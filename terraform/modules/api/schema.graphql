@@ -194,6 +194,10 @@ input CommitInvoiceLifecycleInput {
   buildingId: ID!
   costCenterId: ID
   assetId: ID
+  sector: String
+  activityId: String
+  calculationMethod: String
+  requiresReview: Boolean
   corrections: [InvoiceFieldCorrectionInput!]
   notes: String
   wipSnapshotHash: String

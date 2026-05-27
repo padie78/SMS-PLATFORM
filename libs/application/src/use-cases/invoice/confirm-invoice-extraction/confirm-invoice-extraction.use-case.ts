@@ -249,52 +249,91 @@ export class ConfirmInvoiceExtractionUseCase {
     sourceConfidence: number;
   }): InvoiceGoldenRecord {
     const { input } = args;
+    const periodYear = Number(input.billingPeriodEnd.slice(0, 4));
+    const periodMonth = Number(input.billingPeriodEnd.slice(5, 7));
     return {
       PK: args.pk,
-      SK: `INV#${input.invoiceId}#GOLDEN`,
-      status: TARGET_STATE,
-      processed_at: args.processedAt,
-      updated_at: args.processedAt,
-      analytics: {
-        confidence_score: args.sourceConfidence,
-        anomaly_detected: false
-      },
+      SK: `INV#${this.cleanSkSegment(input.vendorTaxId)}#${this.cleanSkSegment(input.invoiceNumber)}`,
       ai_analysis: {
+        activity_id: this.defaultActivityId(input.energyType),
+        calculation_method: 'consumption_based',
+        confidence_score: args.sourceConfidence,
+        requires_review: args.sourceConfidence < 0.85,
         service_type: input.energyType,
         value: input.consumptionValue,
         unit: input.consumptionUnit,
-        status_triage: 'DONE'
+        year: periodYear
       },
-      climatiq_result: {},
+      analytics_dimensions: {
+        asset_id: input.assetId ?? input.meterId ?? input.buildingId,
+        branch_id: input.branchId,
+        period_month: periodMonth,
+        period_year: periodYear,
+        sector: 'COMMERCIAL'
+      },
+      climatiq_result: {
+        co2e: 0,
+        co2e_unit: 'kg',
+        timestamp: args.processedAt
+      },
       extracted_data: {
-        invoice_number: input.invoiceNumber,
-        invoice_date: input.invoiceDate,
-        vendor: input.vendor,
-        customer: {},
-        cups: null,
-        contract_reference: null,
-        contracted_power: { p1: null, p2: null },
-        tariff: null,
-        total_amount: input.totalAmount,
-        tax_amount: input.taxAmount ?? 0,
-        net_amount: input.subtotalAmount ?? input.totalAmount - (input.taxAmount ?? 0),
-        currency: input.currency,
         billing_period: {
           start: input.billingPeriodStart,
           end: input.billingPeriodEnd
         },
-        lines: []
+        invoice_date: input.invoiceDate,
+        invoice_number: input.invoiceNumber,
+        total_amount: input.totalAmount,
+        vendor: input.vendor,
+        VENDOR_TAX_ID: input.vendorTaxId
       },
       metadata: {
-        s3_key: null,
-        is_draft: false,
-        branchId: input.branchId,
-        buildingId: input.buildingId,
-        meterId: input.meterId,
-        costCenterId: input.costCenterId,
-        assetId: input.assetId
-      }
+        s3_key: '',
+        status: 'PROCESSED',
+        technical_hash: this.cleanSkSegment(input.invoiceId).slice(0, 8),
+        thought_process: {
+          detected_raw_values: [
+            `${input.consumptionValue} ${input.consumptionUnit}`,
+            `${input.totalAmount} ${input.currency}`
+          ],
+          missing_data_strategy: 'No missing critical fields remained after human validation.',
+          monetary_vs_physical_check:
+            `Confirmed physical consumption ${input.consumptionValue} ${input.consumptionUnit}; monetary total ${input.totalAmount} ${input.currency}.`
+        },
+        upload_date: args.processedAt,
+        invoice_id: input.invoiceId,
+        branch_id: input.branchId,
+        building_id: input.buildingId,
+        meter_id: input.meterId,
+        cost_center_id: input.costCenterId,
+        asset_id: input.assetId
+      },
+      processed_at: args.processedAt,
+      total_days_prorated: this.diffDaysInclusive(input.billingPeriodStart, input.billingPeriodEnd)
     };
+  }
+
+  private cleanSkSegment(value: string): string {
+    return value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'UNKNOWN';
+  }
+
+  private diffDaysInclusive(startIso: string, endIso: string): number {
+    const start = Date.parse(`${startIso}T00:00:00.000Z`);
+    const end = Date.parse(`${endIso}T00:00:00.000Z`);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+      return 0;
+    }
+    return Math.floor((end - start) / 86_400_000) + 1;
+  }
+
+  private defaultActivityId(energyType: string): string {
+    if (energyType === 'GAS') {
+      return 'fuel_type_natural_gas-fuel_use_stationary_combustion';
+    }
+    if (energyType === 'ELECTRICITY') {
+      return 'electricity-supply_grid-source_supplier_mix';
+    }
+    return 'unknown_activity';
   }
 }
 

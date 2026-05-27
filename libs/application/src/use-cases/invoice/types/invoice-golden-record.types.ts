@@ -1,70 +1,71 @@
-/**
- * Shape del Golden Record que el use case ProcessInvoicePipeline persiste
- * en DynamoDB vía `IInvoiceGoldenRecordRepository`. Replica el contrato
- * emitido por `buildInvoiceGoldenRecord` y consumido por la UI.
- */
-
-export interface InvoiceGoldenRecordAnalytics {
+export interface InvoiceGoldenRecordAiAnalysis {
+  readonly activity_id: string;
+  readonly calculation_method: 'consumption_based' | 'spend_based' | 'fuel_based';
   readonly confidence_score: number;
-  readonly anomaly_detected: boolean;
+  readonly requires_review: boolean;
+  readonly service_type: string;
+  readonly unit: string;
+  readonly value: number;
+  readonly year: number;
 }
 
-export interface InvoiceGoldenRecordAiAnalysis {
-  readonly service_type: string;
-  readonly value: number;
-  readonly unit: string;
-  readonly status_triage: 'DONE' | 'IN_QUEUE' | 'FAILED';
+export interface InvoiceGoldenRecordAnalyticsDimensions {
+  readonly asset_id: string;
+  readonly branch_id: string;
+  readonly period_month: number;
+  readonly period_year: number;
+  readonly sector: string;
 }
 
 export interface InvoiceGoldenRecordClimatiqResult {
-  readonly co2e?: number;
-  readonly co2e_unit?: string;
-  readonly activity_id?: string;
-  readonly timestamp?: string;
-}
-
-export interface InvoiceGoldenRecordContractedPower {
-  readonly p1: number | null;
-  readonly p2: number | null;
+  readonly co2e: number;
+  readonly co2e_unit: string;
+  readonly timestamp: string;
 }
 
 export interface InvoiceGoldenRecordBillingPeriod {
-  readonly start: string | null;
-  readonly end: string | null;
+  readonly start: string;
+  readonly end: string;
 }
 
 export interface InvoiceGoldenRecordExtractedData {
-  readonly invoice_number: string | null;
-  readonly invoice_date: string | null;
-  readonly vendor: string;
-  readonly customer: Record<string, unknown>;
-  readonly cups: string | null;
-  readonly contract_reference: string | null;
-  readonly contracted_power: InvoiceGoldenRecordContractedPower;
-  readonly tariff: string | null;
-  readonly total_amount: number;
-  readonly tax_amount: number;
-  readonly net_amount: number;
-  readonly currency: string;
   readonly billing_period: InvoiceGoldenRecordBillingPeriod;
-  readonly lines: ReadonlyArray<unknown>;
+  readonly invoice_date: string;
+  readonly invoice_number: string;
+  readonly total_amount: number;
+  readonly vendor: string;
+  readonly VENDOR_TAX_ID: string;
+}
+
+export interface InvoiceGoldenRecordThoughtProcess {
+  readonly detected_raw_values: ReadonlyArray<string>;
+  readonly missing_data_strategy: string;
+  readonly monetary_vs_physical_check: string;
 }
 
 export interface InvoiceGoldenRecordMetadata {
-  readonly s3_key: string | null;
-  readonly is_draft: boolean;
+  readonly s3_key: string;
+  readonly status: 'PROCESSED';
+  readonly technical_hash: string;
+  readonly thought_process: InvoiceGoldenRecordThoughtProcess;
+  readonly upload_date: string;
   readonly [key: string]: unknown;
 }
 
+/**
+ * Golden Record analítico final.
+ *
+ * El lifecycle conserva META/EXTRACTION/AUDIT por separado; este item queda
+ * denormalizado para dashboards ESG, queries de BI y exportación operacional.
+ */
 export interface InvoiceGoldenRecord {
   readonly PK: string;
   readonly SK: string;
-  readonly status: string;
-  readonly processed_at: string;
-  readonly updated_at: string;
-  readonly analytics: InvoiceGoldenRecordAnalytics;
   readonly ai_analysis: InvoiceGoldenRecordAiAnalysis;
-  readonly climatiq_result: InvoiceGoldenRecordClimatiqResult | Record<string, never>;
+  readonly analytics_dimensions: InvoiceGoldenRecordAnalyticsDimensions;
+  readonly climatiq_result: InvoiceGoldenRecordClimatiqResult;
   readonly extracted_data: InvoiceGoldenRecordExtractedData;
   readonly metadata: InvoiceGoldenRecordMetadata;
+  readonly processed_at: string;
+  readonly total_days_prorated: number;
 }

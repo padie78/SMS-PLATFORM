@@ -24,6 +24,8 @@ import {
   buildAuditEntryItem,
   buildInvoicePartitionKey,
   type CommitInvoiceLifecycleInput,
+  type InvoiceExtractionDraft,
+  type InvoiceLifecycleItem,
   type InvoiceLifecycleState
 } from '@sms/common';
 
@@ -132,7 +134,9 @@ export class CommitInvoiceLifecycleUseCase {
       pk,
       input: parsed,
       processedAt: now,
-      sourceConfidence
+      sourceConfidence,
+      meta: snapshot.meta,
+      latestExtractionDraft: snapshot.latestExtractionDraft
     });
 
     const resultingVersion = snapshot.meta.version + 1;
@@ -228,53 +232,135 @@ export class CommitInvoiceLifecycleUseCase {
     input: CommitInvoiceLifecycleInput;
     processedAt: string;
     sourceConfidence: number;
+    meta: InvoiceLifecycleItem;
+    latestExtractionDraft: InvoiceExtractionDraft | null;
   }): InvoiceGoldenRecord {
     const { input } = args;
+    const periodYear = Number(input.billingPeriodEnd.slice(0, 4));
+    const periodMonth = Number(input.billingPeriodEnd.slice(5, 7));
+    const totalDaysProrated = this.diffDaysInclusive(
+      input.billingPeriodStart,
+      input.billingPeriodEnd
+    );
+    const technicalHash =
+      this.shortHash(
+        args.latestExtractionDraft?.modelMeta.documentHashSha256 ??
+          (args.meta.snapshot?.['documentHashSha256'] as string | undefined) ??
+          input.wipSnapshotHash ??
+          input.invoiceId
+      );
+    const s3Key = args.meta.s3Key?.trim() || '';
+    const uploadDate = args.meta.createdAt || args.processedAt;
+    const detectedRawValues = this.buildDetectedRawValues(input);
+    const missingFields = args.latestExtractionDraft?.missingFields ?? [];
+    const suspiciousValues = args.latestExtractionDraft?.suspiciousValues ?? [];
+    const requiresReview = input.requiresReview ?? args.sourceConfidence < 0.85;
+    const activityId = input.activityId ?? this.defaultActivityId(input.energyType);
+    const calculationMethod = input.calculationMethod ?? 'consumption_based';
+
     return {
       PK: args.pk,
-      SK: `INV#${input.invoiceId}#GOLDEN`,
-      status: TARGET_STATE,
-      processed_at: args.processedAt,
-      updated_at: args.processedAt,
-      analytics: {
-        confidence_score: args.sourceConfidence,
-        anomaly_detected: false
-      },
+      SK: this.buildAnalyticalInvoiceSk(input.vendorTaxId, input.invoiceNumber),
       ai_analysis: {
+        activity_id: activityId,
+        calculation_method: calculationMethod,
+        confidence_score: args.sourceConfidence,
+        requires_review: requiresReview,
         service_type: input.energyType,
-        value: input.consumptionValue,
         unit: input.consumptionUnit,
-        status_triage: 'DONE'
+        value: input.consumptionValue,
+        year: periodYear
       },
-      climatiq_result: {},
+      analytics_dimensions: {
+        asset_id: input.assetId ?? input.meterId ?? input.buildingId,
+        branch_id: input.branchId,
+        period_month: periodMonth,
+        period_year: periodYear,
+        sector: input.sector ?? 'COMMERCIAL'
+      },
+      climatiq_result: {
+        co2e: 0,
+        co2e_unit: 'kg',
+        timestamp: args.processedAt
+      },
       extracted_data: {
-        invoice_number: input.invoiceNumber,
-        invoice_date: input.invoiceDate,
-        vendor: input.vendor,
-        customer: {},
-        cups: null,
-        contract_reference: null,
-        contracted_power: { p1: null, p2: null },
-        tariff: null,
-        total_amount: input.totalAmount,
-        tax_amount: input.taxAmount ?? 0,
-        net_amount: input.subtotalAmount ?? input.totalAmount - (input.taxAmount ?? 0),
-        currency: input.currency,
         billing_period: {
           start: input.billingPeriodStart,
           end: input.billingPeriodEnd
         },
-        lines: []
+        invoice_date: input.invoiceDate,
+        invoice_number: input.invoiceNumber,
+        total_amount: input.totalAmount,
+        vendor: input.vendor,
+        VENDOR_TAX_ID: input.vendorTaxId
       },
       metadata: {
-        s3_key: null,
-        is_draft: false,
-        branchId: input.branchId,
-        buildingId: input.buildingId,
-        meterId: input.meterId,
-        costCenterId: input.costCenterId,
-        assetId: input.assetId
-      }
+        s3_key: s3Key,
+        status: 'PROCESSED',
+        technical_hash: technicalHash,
+        thought_process: {
+          detected_raw_values: detectedRawValues,
+          missing_data_strategy:
+            missingFields.length > 0
+              ? `Missing fields reviewed during commit: ${missingFields.join(', ')}.`
+              : 'No missing critical fields remained after human validation.',
+          monetary_vs_physical_check:
+            suspiciousValues.length > 0
+              ? `Suspicious values were reviewed by the user before commit (${suspiciousValues.length} flagged).`
+              : `Committed physical consumption ${input.consumptionValue} ${input.consumptionUnit}; monetary total ${input.totalAmount} ${input.currency}.`
+        },
+        upload_date: uploadDate,
+        ingestion_source: args.meta.ingestionChannel ?? 'PORTAL',
+        source_document_id: args.meta.SK,
+        invoice_id: input.invoiceId,
+        branch_id: input.branchId,
+        building_id: input.buildingId,
+        meter_id: input.meterId,
+        cost_center_id: input.costCenterId,
+        asset_id: input.assetId
+      },
+      processed_at: args.processedAt,
+      total_days_prorated: totalDaysProrated
     };
+  }
+
+  private buildAnalyticalInvoiceSk(vendorTaxId: string, invoiceNumber: string): string {
+    return `INV#${this.cleanSkSegment(vendorTaxId)}#${this.cleanSkSegment(invoiceNumber)}`;
+  }
+
+  private cleanSkSegment(value: string): string {
+    return value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'UNKNOWN';
+  }
+
+  private shortHash(value: string): string {
+    return value.replace(/[^a-fA-F0-9]/g, '').slice(0, 8) || this.cleanSkSegment(value).slice(0, 8);
+  }
+
+  private diffDaysInclusive(startIso: string, endIso: string): number {
+    const start = Date.parse(`${startIso}T00:00:00.000Z`);
+    const end = Date.parse(`${endIso}T00:00:00.000Z`);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+      return 0;
+    }
+    return Math.floor((end - start) / 86_400_000) + 1;
+  }
+
+  private buildDetectedRawValues(input: CommitInvoiceLifecycleInput): string[] {
+    return [
+      `${input.consumptionValue} ${input.consumptionUnit}`,
+      `${input.totalAmount} ${input.currency}`,
+      ...(input.subtotalAmount !== undefined ? [`${input.subtotalAmount} ${input.currency}`] : []),
+      ...(input.taxAmount !== undefined ? [`${input.taxAmount} ${input.currency}`] : [])
+    ];
+  }
+
+  private defaultActivityId(energyType: string): string {
+    if (energyType === 'GAS') {
+      return 'fuel_type_natural_gas-fuel_use_stationary_combustion';
+    }
+    if (energyType === 'ELECTRICITY') {
+      return 'electricity-supply_grid-source_supplier_mix';
+    }
+    return 'unknown_activity';
   }
 }

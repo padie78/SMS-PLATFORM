@@ -38,23 +38,21 @@ export class DynamoInvoiceGoldenRecordRepository implements IInvoiceGoldenRecord
               TableName: this.tableName,
               Key: { PK: finalPK, SK: record.SK },
               UpdateExpression:
-                'SET #st = :status, ai_analysis = :ai, climatiq_result = :cr, ' +
-                'extracted_data = :ed, analytics = :an, processed_at = :now, ' +
-                'updated_at = :now, metadata = :meta',
+                'SET ai_analysis = :ai, analytics_dimensions = :ad, climatiq_result = :cr, ' +
+                'extracted_data = :ed, processed_at = :now, metadata = :meta, ' +
+                'total_days_prorated = :days',
               ConditionExpression: 'attribute_exists(PK)',
-              ExpressionAttributeNames: { '#st': 'status' },
               ExpressionAttributeValues: {
-                ':status': record.status || 'READY_FOR_REVIEW',
                 ':ai': record.ai_analysis,
+                ':ad': record.analytics_dimensions,
                 ':cr': record.climatiq_result,
                 ':ed': record.extracted_data,
-                ':an': record.analytics,
                 ':now': isoNow,
                 ':meta': {
                   ...record.metadata,
-                  processed_at: isoNow,
-                  is_draft: false
-                }
+                  processed_at: isoNow
+                },
+                ':days': record.total_days_prorated
               }
             }
           }

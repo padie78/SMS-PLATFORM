@@ -259,7 +259,11 @@ export class DynamoInvoiceLifecycleRepository implements IInvoiceLifecycleReposi
     }
 
     const latestExtractionDraft = await this.getLatestExtractionDraft(pk, identity.invoiceId);
-    const goldenRecord = await this.getGoldenRecord(pk, identity.invoiceId);
+    const goldenRecord = await this.getGoldenRecord(
+      pk,
+      identity.invoiceId,
+      typeof meta.pointers?.goldenRecordSk === 'string' ? meta.pointers.goldenRecordSk : undefined
+    );
 
     return { meta, latestExtractionDraft, goldenRecord };
   }
@@ -295,12 +299,13 @@ export class DynamoInvoiceLifecycleRepository implements IInvoiceLifecycleReposi
                 TableName: this.tableName,
                 Key: { PK: pk, SK: metaSk },
                 UpdateExpression:
-                  'SET #st = :to, version = :newVer, updatedAt = :now, ' +
-                  'GSI_Status_PK = :gsiPk, GSI_Status_SK = :gsiSk, snapshot = :snap',
+                  'SET #st = :to, #ver = :newVer, updatedAt = :now, ' +
+                  'GSI_Status_PK = :gsiPk, GSI_Status_SK = :gsiSk, #snap = :snap',
                 ConditionExpression: this.buildFromStatesCondition(input.allowedFromStates),
                 ExpressionAttributeNames: {
                   '#st': 'status',
-                  '#ver': 'version'
+                  '#ver': 'version',
+                  '#snap': 'snapshot'
                 },
                 ExpressionAttributeValues: {
                   ...this.buildFromStatesValues(input.allowedFromStates, input.expectedVersion),
@@ -362,12 +367,12 @@ export class DynamoInvoiceLifecycleRepository implements IInvoiceLifecycleReposi
                 TableName: this.tableName,
                 Key: { PK: pk, SK: metaSk },
                 UpdateExpression:
-                  'SET #st = :to, version = :newVer, updatedAt = :now, ' +
+                  'SET #st = :to, #ver = :newVer, updatedAt = :now, ' +
                   'pointers.latestExtractionDraftSk = :draftSk, ' +
                   'pointers.latestExtractionDraftVersion = :draftVer, ' +
-                  'GSI_Status_PK = :gsiPk, GSI_Status_SK = :gsiSk, snapshot = :snap',
+                  'GSI_Status_PK = :gsiPk, GSI_Status_SK = :gsiSk, #snap = :snap',
                 ConditionExpression: this.buildFromStatesCondition(input.allowedFromStates),
-                ExpressionAttributeNames: { '#st': 'status', '#ver': 'version' },
+                ExpressionAttributeNames: { '#st': 'status', '#ver': 'version', '#snap': 'snapshot' },
                 ExpressionAttributeValues: {
                   ...this.buildFromStatesValues(input.allowedFromStates, input.expectedVersion),
                   ':to': input.toState,
@@ -409,7 +414,7 @@ export class DynamoInvoiceLifecycleRepository implements IInvoiceLifecycleReposi
   ): Promise<InvoiceLifecycleWriteResult> {
     const pk = buildInvoicePartitionKey(input.tenantId, input.orgId);
     const metaSk = buildInvoiceMetaSk(input.invoiceId);
-    const goldenSk = buildInvoiceGoldenSk(input.invoiceId);
+    const goldenSk = input.goldenRecord.SK;
     const now = new Date().toISOString();
 
     // Si el FE no conoce la versión actual, necesitamos leerla para emitir
@@ -465,15 +470,16 @@ export class DynamoInvoiceLifecycleRepository implements IInvoiceLifecycleReposi
                 Key: { PK: pk, SK: metaSk },
                 // Promoción WIP → permanente: REMOVE ttl + SET isWip=false.
                 UpdateExpression:
-                  'SET #st = :to, version = :newVer, updatedAt = :now, ' +
+                  'SET #st = :to, #ver = :newVer, updatedAt = :now, ' +
                   'pointers.goldenRecordSk = :goldenSk, isWip = :false, ' +
-                  'GSI_Status_PK = :gsiPk, GSI_Status_SK = :gsiSk, snapshot = :snap ' +
+                  'GSI_Status_PK = :gsiPk, GSI_Status_SK = :gsiSk, #snap = :snap ' +
                   'REMOVE #ttl, wipExpiresAt',
                 ConditionExpression: conditionExpression,
                 ExpressionAttributeNames: {
                   '#st': 'status',
                   '#ver': 'version',
-                  '#ttl': 'ttl'
+                  '#ttl': 'ttl',
+                  '#snap': 'snapshot'
                 },
                 ExpressionAttributeValues: {
                   ...conditionValues,
@@ -514,7 +520,7 @@ export class DynamoInvoiceLifecycleRepository implements IInvoiceLifecycleReposi
   async persistGoldenRecord(input: PersistGoldenRecordInput): Promise<InvoiceLifecycleWriteResult> {
     const pk = buildInvoicePartitionKey(input.tenantId, input.orgId);
     const metaSk = buildInvoiceMetaSk(input.invoiceId);
-    const goldenSk = buildInvoiceGoldenSk(input.invoiceId);
+    const goldenSk = input.goldenRecord.SK;
     const now = new Date().toISOString();
     const newVersion = input.expectedVersion + 1;
 
@@ -549,11 +555,11 @@ export class DynamoInvoiceLifecycleRepository implements IInvoiceLifecycleReposi
                 TableName: this.tableName,
                 Key: { PK: pk, SK: metaSk },
                 UpdateExpression:
-                  'SET #st = :to, version = :newVer, updatedAt = :now, ' +
+                  'SET #st = :to, #ver = :newVer, updatedAt = :now, ' +
                   'pointers.goldenRecordSk = :goldenSk, ' +
-                  'GSI_Status_PK = :gsiPk, GSI_Status_SK = :gsiSk, snapshot = :snap',
+                  'GSI_Status_PK = :gsiPk, GSI_Status_SK = :gsiSk, #snap = :snap',
                 ConditionExpression: this.buildFromStatesCondition(input.allowedFromStates),
-                ExpressionAttributeNames: { '#st': 'status', '#ver': 'version' },
+                ExpressionAttributeNames: { '#st': 'status', '#ver': 'version', '#snap': 'snapshot' },
                 ExpressionAttributeValues: {
                   ...this.buildFromStatesValues(input.allowedFromStates, input.expectedVersion),
                   ':to': input.toState,
@@ -659,12 +665,13 @@ export class DynamoInvoiceLifecycleRepository implements IInvoiceLifecycleReposi
 
   private async getGoldenRecord(
     pk: string,
-    invoiceId: string
+    invoiceId: string,
+    goldenRecordSk?: string
   ): Promise<InvoiceGoldenRecord | null> {
     const res = await this.doc.send(
       new GetCommand({
         TableName: this.tableName,
-        Key: { PK: pk, SK: buildInvoiceGoldenSk(invoiceId) }
+        Key: { PK: pk, SK: goldenRecordSk ?? buildInvoiceGoldenSk(invoiceId) }
       })
     );
     if (!res.Item) {
