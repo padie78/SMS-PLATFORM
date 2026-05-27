@@ -100,6 +100,22 @@ resource "aws_iam_policy" "s3_processing_policy" {
   })
 }
 
+resource "aws_iam_policy" "worker_appsync_ssm_read" {
+  name        = "${var.project_name}-worker-appsync-ssm-${var.environment}"
+  description = "Permite al worker leer URL/API key de AppSync desde SSM (rompe ciclo TF api↔compute)"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["ssm:GetParameter", "ssm:GetParameters"]
+      Resource = [
+        "arn:aws:ssm:*:*:parameter/${var.project_name}/${var.environment}/appsync/graphql_url",
+        "arn:aws:ssm:*:*:parameter/${var.project_name}/${var.environment}/appsync/api_key"
+      ]
+    }]
+  })
+}
+
 resource "aws_iam_policy" "dynamo_app_policy" {
   name = "${var.project_name}-dynamo-policy-${var.environment}"
   policy = jsonencode({
@@ -164,6 +180,10 @@ resource "aws_iam_role_policy_attachment" "worker_s3" {
 resource "aws_iam_role_policy_attachment" "worker_dynamo" {
   role       = aws_iam_role.worker_lambda_role.name
   policy_arn = aws_iam_policy.dynamo_app_policy.arn
+}
+resource "aws_iam_role_policy_attachment" "worker_appsync_ssm" {
+  role       = aws_iam_role.worker_lambda_role.name
+  policy_arn = aws_iam_policy.worker_appsync_ssm_read.arn
 }
 
 # --- API Role: Dynamo + S3 ---

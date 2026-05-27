@@ -9,13 +9,17 @@ if (!tableName) {
 const defaultOrgId = process.env.DEFAULT_ORG_ID ?? 'DEFAULT_ORG';
 const appsyncUrl = process.env.APPSYNC_URL;
 const appsyncApiKey = process.env.APPSYNC_API_KEY;
+const appsyncUrlSsmParameter = process.env.APPSYNC_URL_SSM_PARAMETER;
+const appsyncApiKeySsmParameter = process.env.APPSYNC_API_KEY_SSM_PARAMETER;
 
 const doc = createDynamoDocumentClient();
 const processInvoiceQueueBatch = createProcessInvoiceQueueBatchUseCase({
   doc,
   tableName,
   appsyncUrl,
-  appsyncApiKey
+  appsyncApiKey,
+  appsyncUrlSsmParameter,
+  appsyncApiKeySsmParameter
 });
 
 // --- HANDLER (traductor AWS → caso de uso) ---

@@ -17,6 +17,8 @@ export type CreateProcessInvoiceQueueBatchUseCaseParams = {
   readonly tableName: string;
   readonly appsyncUrl?: string;
   readonly appsyncApiKey?: string;
+  readonly appsyncUrlSsmParameter?: string;
+  readonly appsyncApiKeySsmParameter?: string;
   readonly textractRegion?: string;
   readonly bedrockRegion?: string;
   readonly classifierRegion?: string;
@@ -47,7 +49,9 @@ export function createProcessInvoiceQueueBatchUseCase(
     }),
     statusNotifier: new AppSyncInvoiceStatusNotifierAdapter({
       appsyncUrl: params.appsyncUrl,
-      apiKey: params.appsyncApiKey
+      apiKey: params.appsyncApiKey,
+      appsyncUrlSsmParameter: params.appsyncUrlSsmParameter,
+      apiKeySsmParameter: params.appsyncApiKeySsmParameter
     })
   };
 

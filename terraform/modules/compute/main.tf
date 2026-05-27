@@ -152,13 +152,15 @@ resource "aws_lambda_function" "worker_lambda" {
 
   environment {
     variables = {
-      DYNAMO_TABLE      = var.dynamo_table_name
-      BEDROCK_MODEL_ID  = var.bedrock_model_id
-      EMISSIONS_API_URL = var.emissions_api_url
-      EMISSIONS_API_KEY = var.emissions_api_key
-      APPSYNC_URL       = var.appsync_url
-      APPSYNC_API_KEY   = var.appsync_api_key
-      ENVIRONMENT       = var.environment
+      DYNAMO_TABLE                  = var.dynamo_table_name
+      BEDROCK_MODEL_ID              = var.bedrock_model_id
+      EMISSIONS_API_URL             = var.emissions_api_url
+      EMISSIONS_API_KEY             = var.emissions_api_key
+      APPSYNC_URL                   = var.appsync_url
+      APPSYNC_API_KEY               = var.appsync_api_key
+      APPSYNC_URL_SSM_PARAMETER     = "/${var.project_name}/${var.environment}/appsync/graphql_url"
+      APPSYNC_API_KEY_SSM_PARAMETER = "/${var.project_name}/${var.environment}/appsync/api_key"
+      ENVIRONMENT                   = var.environment
     }
   }
   source_code_hash = data.archive_file.worker_zip.output_base64sha256
