@@ -45,6 +45,15 @@ data "external" "build_worker_lambda" {
   ]
 }
 
+data "external" "build_signer_lambda" {
+  program = [
+    "bash",
+    "${path.root}/scripts/build-lambda.sh",
+    "signer-lambda",
+    abspath("${path.root}/../dist/lambda_code/signer_lambda")
+  ]
+}
+
 data "archive_file" "dispatcher_zip" {
   type        = "zip"
   source_dir  = data.external.build_dispatcher_lambda.result.bundle_dir
@@ -59,9 +68,8 @@ data "archive_file" "worker_zip" {
 
 data "archive_file" "signer_zip" {
   type        = "zip"
-  source_dir  = "${path.root}/../lambda_code/signer_lambda"
+  source_dir  = data.external.build_signer_lambda.result.bundle_dir
   output_path = "${path.module}/zips/signer.zip"
-  excludes    = local.lambda_zip_excludes
 }
 
 # -----------------------------------------------------------------------------
@@ -160,7 +168,7 @@ resource "aws_lambda_function" "worker_lambda" {
 resource "aws_lambda_function" "signer" {
   function_name = "${var.project_name}-signer-${var.environment}"
   filename      = data.archive_file.signer_zip.output_path
-  handler       = "src/index.handler"
+  handler       = "main.handler"
   runtime       = "nodejs20.x"
   role          = var.lambda_role_arn
   architectures = [var.lambda_architecture]
